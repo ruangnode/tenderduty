@@ -78,6 +78,21 @@
       border-color: rgba(0,0,0,0.15); color: #475569;
     }
 
+    .rn-filter-group { display: flex; gap: 4px; }
+
+    .rn-filter {
+      font-size: 11px; font-weight: 600; cursor: pointer;
+      background: none; border: 1px solid rgba(255,255,255,0.1);
+      color: #64748b; padding: 4px 12px; border-radius: 6px; transition: .2s;
+    }
+
+    .rn-filter:hover { border-color: #6366f1; color: #a5b4fc; }
+
+    .rn-filter.active {
+      background: #6366f1; border-color: #6366f1;
+      color: #fff;
+    }
+
     /* ── Canvas zone ── */
     #canvasDiv {
       padding: 14px 0 0;
@@ -251,6 +266,11 @@
     <div class="rn-tagline">Validator Node Monitoring</div>
   </div>
   <div class="rn-header-right">
+    <div class="rn-filter-group">
+      <button class="rn-filter active" id="filter-all"      onclick="setFilter('all')">All</button>
+      <button class="rn-filter"        id="filter-mainnet"  onclick="setFilter('mainnet')">Mainnet</button>
+      <button class="rn-filter"        id="filter-testnet"  onclick="setFilter('testnet')">Testnet</button>
+    </div>
     <div class="rn-dot"></div>
     <span class="rn-live">LIVE</span>
     <button class="rn-btn" onclick="lightMode()">☀ Light</button>

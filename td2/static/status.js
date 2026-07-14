@@ -30,14 +30,31 @@ async function loadState() {
     }
 }
 
+let currentFilter = 'all'
+let lastStatus = null
+
+function setFilter(f) {
+    currentFilter = f
+    document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
+    document.getElementById('filter-' + f).classList.add('active')
+    if (lastStatus) updateTable(lastStatus)
+}
+
 const blocks = new Map();
 function updateTable(status) {
+    lastStatus = status
     for (let i = document.getElementById("statusTable").rows.length; i > 0; i--) {
         document.getElementById("statusTable").deleteRow(i-1)
     }
 
+    let rowIndex = 0
     for (let i = 0; i < status.Status.length; i++) {
         const s = status.Status[i]
+
+        // Filter by mainnet/testnet
+        const isTestnet = s.name.toLowerCase().includes('testnet')
+        if (currentFilter === 'mainnet' && isTestnet) continue
+        if (currentFilter === 'testnet' && !isTestnet) continue
 
         // Alert cell
         let alerts = "&nbsp;"
@@ -109,7 +126,7 @@ function updateTable(status) {
             monikerHtml = `<span class="rn-moniker">${_.escape(s.moniker.substring(0,24))}</span>`
         }
 
-        let r = document.getElementById('statusTable').insertRow(i)
+        let r = document.getElementById('statusTable').insertRow(rowIndex++)
         r.insertCell(0).innerHTML = `<div>${alerts}</div>`
         r.insertCell(1).innerHTML = `
           <div class="rn-chain-name">${_.escape(s.name)}</div>
