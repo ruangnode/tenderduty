@@ -1,61 +1,401 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <style>
-      /*canvas {
-          image-rendering: -moz-crisp-edges;
-          image-rendering: -webkit-crisp-edges;
-          image-rendering: crisp-edges;
-      }*/
-  </style>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="css/uikit.min.css" />
   <title>RuangNode Monitor</title>
+  <link rel="icon" href="favicon.png">
   <script src="js/uikit.min.js"></script>
   <script src="./js/uikit-icons.min.js"></script>
   <script src="./js/lodash.min.js"></script>
   <script type="application/javascript" src="grid.js"></script>
   <script type="application/javascript" src="status.js"></script>
-  <link rel="icon" href="favicon.png">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #090d1a;
+      --bg2: #0f1423;
+      --bg3: #151b2e;
+      --border: rgba(255,255,255,0.07);
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --dim: #94a3b8;
+      --accent: #6366f1;
+      --green: #22c55e;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Header ── */
+    .rn-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px;
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .rn-logo {
+      font-size: 18px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .rn-tagline {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 1px;
+      letter-spacing: 0.04em;
+    }
+
+    .rn-header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .rn-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    .rn-live {
+      font-size: 11px;
+      color: var(--green);
+      font-weight: 600;
+      letter-spacing: 0.06em;
+    }
+
+    .rn-mode-btn {
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      background: none;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 6px;
+      transition: border-color 0.2s;
+    }
+
+    .rn-mode-btn:hover { border-color: var(--accent); color: var(--text); }
+
+    /* ── Canvas strip ── */
+    .rn-canvas {
+      background: var(--bg2);
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      padding: 14px 0 0;
+    }
+
+    .rn-canvas-inner { padding: 0 28px; width: max-content; }
+    #legendContainer { text-align: center; padding: 8px 0 14px; }
+
+    /* ── Main ── */
+    .rn-main { padding: 28px; max-width: 1400px; margin: 0 auto; }
+
+    .rn-section-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* ── Table ── */
+    .rn-table {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0 6px;
+    }
+
+    .rn-table thead th {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 0 16px 6px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .rn-table thead th:first-child { width: 36px; }
+
+    .rn-table tbody tr {
+      background: var(--bg3);
+      transition: background 0.15s;
+    }
+
+    .rn-table tbody tr:hover { background: #1a2035; }
+
+    .rn-table tbody td {
+      padding: 14px 16px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .rn-table tbody td:first-child {
+      border-left: 1px solid var(--border);
+      border-radius: 10px 0 0 10px;
+      width: 36px;
+    }
+
+    .rn-table tbody td:last-child {
+      border-right: 1px solid var(--border);
+      border-radius: 0 10px 10px 0;
+    }
+
+    /* chain name cell */
+    .rn-chain-name {
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text);
+    }
+
+    .rn-chain-id {
+      font-size: 11px;
+      color: var(--muted);
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      margin-top: 2px;
+    }
+
+    /* height */
+    .rn-height {
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 13px;
+      color: var(--dim);
+      letter-spacing: 0.02em;
+    }
+
+    /* moniker */
+    .rn-moniker {
+      font-size: 13px;
+      color: var(--dim);
+      max-width: 160px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* bonded badges */
+    .rn-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 11px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .rn-badge-green {
+      background: rgba(34,197,94,.12);
+      color: var(--green);
+      border: 1px solid rgba(34,197,94,.2);
+    }
+
+    .rn-badge-red {
+      background: rgba(239,68,68,.12);
+      color: var(--red);
+      border: 1px solid rgba(239,68,68,.2);
+    }
+
+    .rn-badge-yellow {
+      background: rgba(245,158,11,.12);
+      color: var(--yellow);
+      border: 1px solid rgba(245,158,11,.2);
+    }
+
+    .rn-badge-gray {
+      background: rgba(100,116,139,.12);
+      color: var(--muted);
+      border: 1px solid rgba(100,116,139,.2);
+    }
+
+    /* uptime */
+    .rn-uptime-pct {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .rn-uptime-bar {
+      width: 100px;
+      height: 3px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 2px;
+      margin: 5px 0 3px;
+      overflow: hidden;
+    }
+
+    .rn-uptime-fill {
+      height: 100%;
+      border-radius: 2px;
+      background: var(--green);
+      transition: width 0.5s ease;
+    }
+
+    .rn-uptime-fill.warn  { background: var(--yellow); }
+    .rn-uptime-fill.danger { background: var(--red); }
+
+    .rn-uptime-detail {
+      font-size: 10px;
+      color: var(--muted);
+      font-family: monospace;
+    }
+
+    /* nodes */
+    .rn-nodes {
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .rn-nodes-ok   { color: var(--green); }
+    .rn-nodes-warn { color: var(--yellow); }
+
+    /* alert icon */
+    .rn-alert-icon { color: var(--yellow); cursor: pointer; }
+
+    /* ── Log panel ── */
+    .rn-log {
+      margin-top: 24px;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .rn-log-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+    }
+
+    .rn-log-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    #logs {
+      display: block;
+      padding: 14px 18px;
+      font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 12px;
+      color: var(--dim);
+      line-height: 1.7;
+      height: 240px;
+      overflow-y: auto;
+      background: transparent;
+      resize: vertical;
+      border: none;
+      width: 100%;
+      outline: none;
+    }
+
+    /* ── Footer ── */
+    .rn-footer {
+      text-align: center;
+      padding: 20px;
+      font-size: 11px;
+      color: #334155;
+    }
+
+    .rn-footer a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
+    .rn-footer a:hover { color: var(--text); }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 4px; height: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+  </style>
 </head>
+<body onload="loadState(); legend()">
 
-<body class="uk-background-secondary uk-light" onload="loadState(); legend()">
-<div class="uk-container uk-width-expand uk-height-viewport">
-  <div class="uk-width-expand uk-overflow-auto uk-background-secondary" id="canvasDiv">
-    <div style="width: 4835px;" class="uk-padding-remove-horizontal">
-      <canvas id="canvas" height="20" width="4735"></canvas>
-    </div>
-    <div id="legendContainer" class="uk-nav-center uk-background-secondary uk-padding-remove">
-      <canvas id="legend" height="32" width="700"></canvas>
-    </div>
+<header class="rn-header">
+  <div>
+    <div class="rn-logo">RuangNode Monitor</div>
+    <div class="rn-tagline">Validator Node Monitoring</div>
   </div>
+  <div class="rn-header-right">
+    <div class="rn-dot"></div>
+    <span class="rn-live">LIVE</span>
+    <button class="rn-mode-btn" onclick="lightMode()">☀ Light</button>
+  </div>
+</header>
 
-  <div class="uk-padding-small uk-text-small uk-background-secondary uk-overflow-auto" id="tableDiv">
-    <table class="uk-table uk-table-small uk-table-justify uk-padding-remove">
+<div class="rn-canvas">
+  <div class="rn-canvas-inner" style="width: 4835px;">
+    <canvas id="canvas" height="20" width="4735"></canvas>
+  </div>
+  <div id="legendContainer">
+    <canvas id="legend" height="32" width="700"></canvas>
+  </div>
+</div>
+
+<div class="rn-main">
+  <div class="rn-section-label">Validator Status</div>
+
+  <div style="overflow-x: auto;">
+    <table class="rn-table">
       <thead>
-      <tr>
-        <th></th>
-        <th>Chain</th>
-        <th>Height</th>
-        <th>Moniker</th>
-        <th style="text-align: center">Bonded</th>
-        <th class="uk-text-center">Uptime</th>
-        <th class="uk-text-center">RPC Nodes</th>
-      </tr>
+        <tr>
+          <th></th>
+          <th>Chain</th>
+          <th>Height</th>
+          <th>Moniker</th>
+          <th>Status</th>
+          <th>Uptime</th>
+          <th>RPC Nodes</th>
+        </tr>
       </thead>
       <tbody id="statusTable"></tbody>
     </table>
   </div>
 
-  <div class="uk-padding-large uk-padding-remove-top" id="logContainer">
-    <pre id="logs" class="uk-panel-scrollable uk-resize-vertical" style="background: #080808; height: 300px;"></pre>
-  </div>
-
-  <div class="uk-text-small uk-text-center">
-    <a class="uk-link-muted" onclick="lightMode()"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-brightness-high" viewBox="0 0 16 16"><path d="M8 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6zm0 1a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM8 0a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 0zm0 13a.5.5 0 0 1 .5.5v2a.5.5 0 0 1-1 0v-2A.5.5 0 0 1 8 13zm8-5a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2a.5.5 0 0 1 .5.5zM3 8a.5.5 0 0 1-.5.5h-2a.5.5 0 0 1 0-1h2A.5.5 0 0 1 3 8zm10.657-5.657a.5.5 0 0 1 0 .707l-1.414 1.415a.5.5 0 1 1-.707-.708l1.414-1.414a.5.5 0 0 1 .707 0zm-9.193 9.193a.5.5 0 0 1 0 .707L3.05 13.657a.5.5 0 0 1-.707-.707l1.414-1.414a.5.5 0 0 1 .707 0zm9.193 2.121a.5.5 0 0 1-.707 0l-1.414-1.414a.5.5 0 0 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .707zM4.464 4.465a.5.5 0 0 1-.707 0L2.343 3.05a.5.5 0 1 1 .707-.707l1.414 1.414a.5.5 0 0 1 0 .708z"/></svg></a>
-    <a class="uk-link-muted" href="https://ruangnode.com"><span style="font-weight:700">RuangNode</span> Monitor</a>
+  <div class="rn-log" id="logContainer">
+    <div class="rn-log-header">
+      <div class="rn-log-dot"></div>
+      System Logs
+    </div>
+    <pre id="logs"></pre>
   </div>
 </div>
+
+<div class="rn-footer">
+  <a href="https://ruangnode.com"><strong>RuangNode</strong></a> · Validator Monitor
+</div>
+
 </body>
 </html>
