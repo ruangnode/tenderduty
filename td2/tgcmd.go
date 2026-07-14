@@ -34,8 +34,51 @@ func (c *Config) startTgCommandListener() {
 			msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
 			msg.ParseMode = "Markdown"
 			bot.Send(msg)
+		case "list":
+			reply := c.handleListCommand()
+			msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
+			msg.ParseMode = "Markdown"
+			bot.Send(msg)
 		}
 	}
+}
+
+func (c *Config) handleListCommand() string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	if len(c.Chains) == 0 {
+		return "No chains configured."
+	}
+
+	lines := []string{"📋 *Chains monitored:*\n"}
+	for name, cc := range c.Chains {
+		nodeStatus := fmt.Sprintf("%d/%d nodes", len(cc.Nodes)-countDownNodes(cc), len(cc.Nodes))
+		valStatus := "⏳"
+		if cc.valInfo != nil && cc.valInfo.Moniker != "not connected" {
+			if cc.valInfo.Tombstoned {
+				valStatus = "☠️"
+			} else if cc.valInfo.Jailed {
+				valStatus = "🔴"
+			} else if cc.valInfo.Bonded {
+				valStatus = "🟢"
+			} else {
+				valStatus = "⚪"
+			}
+		}
+		lines = append(lines, fmt.Sprintf("%s *%s* — %s", valStatus, name, nodeStatus))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func countDownNodes(cc *ChainConfig) int {
+	n := 0
+	for _, node := range cc.Nodes {
+		if node.down {
+			n++
+		}
+	}
+	return n
 }
 
 func (c *Config) handleStatusCommand(chainName string) string {
