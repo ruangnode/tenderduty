@@ -16,6 +16,7 @@ type addChainSession struct {
 	chainID string
 	valoper string
 	rpcURL  string
+	lcdURL  string
 }
 
 var (
@@ -74,7 +75,7 @@ func (c *Config) startTgCommandListener() {
 			addChainSessionMux.Lock()
 			addChainSessions[chatID] = &addChainSession{step: 0}
 			addChainSessionMux.Unlock()
-			send(chatID, "➕ *Add Chain*\n\nStep 1/4: Masukkan nama chain:\n(contoh: `AtomOne Testnet`)")
+			send(chatID, "➕ *Add Chain*\n\nStep 1/5: Masukkan nama chain:\n(contoh: `AtomOne Testnet`)")
 		case "cancel":
 			addChainSessionMux.Lock()
 			delete(addChainSessions, chatID)
@@ -89,23 +90,34 @@ func (c *Config) handleAddChainStep(chatID int64, text string, s *addChainSessio
 	case 0:
 		s.name = strings.TrimSpace(text)
 		s.step = 1
-		send(chatID, fmt.Sprintf("✅ Nama: `%s`\n\nStep 2/4: Masukkan chain ID:\n(contoh: `atomone-testnet-1`)", s.name))
+		send(chatID, fmt.Sprintf("✅ Nama: `%s`\n\nStep 2/5: Masukkan chain ID:\n(contoh: `atomone-testnet-1`)", s.name))
 	case 1:
 		s.chainID = strings.TrimSpace(text)
 		s.step = 2
-		send(chatID, fmt.Sprintf("✅ Chain ID: `%s`\n\nStep 3/4: Masukkan valoper address:", s.chainID))
+		send(chatID, fmt.Sprintf("✅ Chain ID: `%s`\n\nStep 3/5: Masukkan valoper address:", s.chainID))
 	case 2:
 		s.valoper = strings.TrimSpace(text)
 		s.step = 3
-		send(chatID, fmt.Sprintf("✅ Valoper: `%s`\n\nStep 4/4: Masukkan RPC URL:\n(contoh: `tcp://10.32.0.2:26657`)", s.valoper))
+		send(chatID, fmt.Sprintf("✅ Valoper: `%s`\n\nStep 4/5: Masukkan RPC URL:\n(contoh: `tcp://10.32.0.2:26657`)", s.valoper))
 	case 3:
 		s.rpcURL = strings.TrimSpace(text)
 		s.step = 4
-		send(chatID, fmt.Sprintf(
-			"📋 *Konfirmasi:*\n\nNama: `%s`\nChain ID: `%s`\nValoper: `%s`\nRPC: `%s`\n\nKirim `ya` untuk simpan atau `tidak` untuk batal.",
-			s.name, s.chainID, s.valoper, s.rpcURL,
-		))
+		send(chatID, fmt.Sprintf("✅ RPC: `%s`\n\nStep 5/5: Masukkan LCD URL:\n(contoh: `http://10.32.0.2:1317`)\n\nKetik `-` untuk skip jika tidak ada.", s.rpcURL))
 	case 4:
+		s.lcdURL = strings.TrimSpace(text)
+		if s.lcdURL == "-" {
+			s.lcdURL = ""
+		}
+		s.step = 5
+		lcdInfo := s.lcdURL
+		if lcdInfo == "" {
+			lcdInfo = "(tidak ada)"
+		}
+		send(chatID, fmt.Sprintf(
+			"📋 *Konfirmasi:*\n\nNama: `%s`\nChain ID: `%s`\nValoper: `%s`\nRPC: `%s`\nLCD: `%s`\n\nKirim `ya` untuk simpan atau `tidak` untuk batal.",
+			s.name, s.chainID, s.valoper, s.rpcURL, lcdInfo,
+		))
+	case 5:
 		switch strings.ToLower(strings.TrimSpace(text)) {
 		case "ya", "yes", "y":
 			err := c.appendChainToConfig(s)
@@ -138,11 +150,16 @@ func (c *Config) appendChainToConfig(s *addChainSession) error {
 	}
 	defer f.Close()
 
+	lcdLine := ""
+	if s.lcdURL != "" {
+		lcdLine = fmt.Sprintf("\n    lcd_url: %q", s.lcdURL)
+	}
+
 	block := fmt.Sprintf(`
   %q:
-    chain_id: %q
+    chain_id: %q%s
     valoper_address: %q
-    public_fallback: no
+    public_fallback: no`, s.name, s.chainID, lcdLine, s.valoper) + `
 
     alerts:
       stalled_enabled: yes
@@ -161,10 +178,9 @@ func (c *Config) appendChainToConfig(s *addChainSession) error {
         channel: ""
 
     nodes:
-      - url: %s
+      - url: ` + s.rpcURL + `
         alert_if_down: yes
-`, s.name, s.chainID, s.valoper, s.rpcURL)
-
+`
 	_, err = f.WriteString(block)
 	return err
 }
