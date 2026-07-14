@@ -1,6 +1,6 @@
 
 async function loadState() {
-   const enableLogs = await fetch("logsenabled", {
+    const enableLogs = await fetch("logsenabled", {
         method: 'GET', mode: 'cors', cache: 'no-cache',
         credentials: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer'
     });
@@ -16,45 +16,77 @@ async function loadState() {
     });
     let initialState
     try { initialState = await response.json() } catch(e) { console.log(e) }
-    updateTable(initialState)
-    drawSeries(initialState)
+    applyUpdate(initialState)
 
     const logResponse = await fetch("logs", {
         method: 'GET', mode: 'cors', cache: 'no-cache',
         credentials: 'same-origin', redirect: 'error', referrerPolicy: 'no-referrer'
     });
-    try { initialState = await logResponse.json() } catch(e) { console.log(e) }
-    for (let i = initialState.length-1; i >= 0; i--) {
-        if (initialState[i].ts === 0) { addLogMsg(""); continue }
-        addLogMsg(`${new Date(initialState[i].ts*1000).toLocaleTimeString()} - ${initialState[i].msg}`)
+    let logData
+    try { logData = await logResponse.json() } catch(e) { console.log(e) }
+    for (let i = logData.length - 1; i >= 0; i--) {
+        if (logData[i].ts === 0) { rawLogs.push(""); continue }
+        rawLogs.push(`${new Date(logData[i].ts*1000).toLocaleTimeString()} - ${logData[i].msg}`)
     }
+    updateLogDisplay()
 }
 
-let currentFilter = 'all'
+// ── Filter ──────────────────────────────────────────────────────────────
+let currentFilter = null  // null = show all
 let lastStatus = null
 
-function setFilter(f) {
-    currentFilter = f
-    document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
-    document.getElementById('filter-' + f).classList.add('active')
-    if (lastStatus) updateTable(lastStatus)
+function isTestnet(name) {
+    return name.toLowerCase().includes('testnet')
 }
 
-const blocks = new Map();
-function updateTable(status) {
-    lastStatus = status
-    for (let i = document.getElementById("statusTable").rows.length; i > 0; i--) {
-        document.getElementById("statusTable").deleteRow(i-1)
+function setFilter(f) {
+    if (currentFilter === f) {
+        currentFilter = null
+        document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
+    } else {
+        currentFilter = f
+        document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
+        document.getElementById('filter-' + f).classList.add('active')
     }
+    if (lastStatus) applyUpdate(lastStatus)
+}
 
-    let rowIndex = 0
+function filteredStatus(status) {
+    if (!currentFilter) return status
+    return Object.assign({}, status, {
+        Status: status.Status.filter(s =>
+            currentFilter === 'testnet' ? isTestnet(s.name) : !isTestnet(s.name)
+        )
+    })
+}
+
+function filterKeywords() {
+    if (!lastStatus || !currentFilter) return []
+    const kw = []
+    for (const s of lastStatus.Status) {
+        const match = currentFilter === 'testnet' ? isTestnet(s.name) : !isTestnet(s.name)
+        if (match) { kw.push(s.name.toLowerCase(), s.chain_id.toLowerCase()) }
+    }
+    return kw
+}
+
+function applyUpdate(status) {
+    lastStatus = status
+    const fs = filteredStatus(status)
+    updateTable(fs)
+    drawSeries(fs)
+    updateLogDisplay()
+}
+
+// ── Table ────────────────────────────────────────────────────────────────
+const blocks = new Map()
+
+function updateTable(status) {
+    const tbody = document.getElementById("statusTable")
+    for (let i = tbody.rows.length; i > 0; i--) tbody.deleteRow(i - 1)
+
     for (let i = 0; i < status.Status.length; i++) {
         const s = status.Status[i]
-
-        // Filter by mainnet/testnet
-        const isTestnet = s.name.toLowerCase().includes('testnet')
-        if (currentFilter === 'mainnet' && isTestnet) continue
-        if (currentFilter === 'testnet' && !isTestnet) continue
 
         // Alert cell
         let alerts = "&nbsp;"
@@ -75,7 +107,7 @@ function updateTable(status) {
             }
         }
 
-        // Bonded badge
+        // Status badge
         let bonded
         if (s.tombstoned) {
             bonded = `<span class="rn-badge rn-badge-red">☠ Tombstoned</span>`
@@ -88,14 +120,11 @@ function updateTable(status) {
         }
 
         // Uptime
-        let uptimePct = 0
-        let uptimeStr = "—"
-        let barClass = ""
+        let uptimePct = 0, uptimeStr = "—", barClass = ""
         if (s.missed === 0 && s.window === 0) {
             uptimeStr = "error"
         } else if (s.missed === 0) {
-            uptimePct = 100
-            uptimeStr = "100%"
+            uptimePct = 100; uptimeStr = "100%"
         } else {
             uptimePct = 100 - (s.missed / s.window) * 100
             uptimeStr = uptimePct.toFixed(2) + "%"
@@ -109,8 +138,8 @@ function updateTable(status) {
           <div class="rn-uptime-detail">${_.escape(s.missed)} / ${_.escape(s.window)}</div>`
 
         // Nodes
-        let nodesClass = s.healthy_nodes < s.nodes ? "rn-nodes rn-nodes-warn" : "rn-nodes rn-nodes-ok"
-        let nodesCell = `<span class="${nodesClass}">${_.escape(s.healthy_nodes)}/${_.escape(s.nodes)}</span>`
+        const nodesClass = s.healthy_nodes < s.nodes ? "rn-nodes rn-nodes-warn" : "rn-nodes rn-nodes-ok"
+        const nodesCell = `<span class="${nodesClass}">${_.escape(s.healthy_nodes)}/${_.escape(s.nodes)}</span>`
 
         // Height animation
         let heightClass = ""
@@ -126,11 +155,9 @@ function updateTable(status) {
             monikerHtml = `<span class="rn-moniker">${_.escape(s.moniker.substring(0,24))}</span>`
         }
 
-        let r = document.getElementById('statusTable').insertRow(rowIndex++)
+        const r = tbody.insertRow(i)
         r.insertCell(0).innerHTML = `<div>${alerts}</div>`
-        r.insertCell(1).innerHTML = `
-          <div class="rn-chain-name">${_.escape(s.name)}</div>
-          <div class="rn-chain-id">${_.escape(s.chain_id)}</div>`
+        r.insertCell(1).innerHTML = `<div class="rn-chain-name">${_.escape(s.name)}</div><div class="rn-chain-id">${_.escape(s.chain_id)}</div>`
         r.insertCell(2).innerHTML = `<div class="rn-height ${heightClass}">${_.escape(s.height)}</div>`
         r.insertCell(3).innerHTML = monikerHtml
         r.insertCell(4).innerHTML = bonded
@@ -139,25 +166,38 @@ function updateTable(status) {
     }
 }
 
-let logs = new Array(1);
+// ── Logs ─────────────────────────────────────────────────────────────────
+let rawLogs = []
+
 function addLogMsg(str) {
-    if (logs.length >= 256) logs.pop()
-    logs.unshift(str)
-    if (document.visibilityState !== "hidden") {
-        document.getElementById("logs").innerText = logs.join("\n")
-    }
+    if (rawLogs.length >= 256) rawLogs.shift()
+    rawLogs.push(str)
+    updateLogDisplay()
 }
 
+function updateLogDisplay() {
+    if (document.visibilityState === "hidden") return
+    const kw = filterKeywords()
+    let lines
+    if (kw.length === 0) {
+        lines = [...rawLogs].reverse()
+    } else {
+        lines = [...rawLogs].reverse().filter(line =>
+            !line || kw.some(k => line.toLowerCase().includes(k))
+        )
+    }
+    document.getElementById("logs").innerText = lines.join("\n")
+}
+
+// ── WebSocket ─────────────────────────────────────────────────────────────
 function connect() {
-    let wsProto = "ws://"
-    if (location.protocol === "https:") wsProto = "wss://"
+    let wsProto = location.protocol === "https:" ? "wss://" : "ws://"
     const parse = function(event) {
         const msg = JSON.parse(event.data)
         if (msg.msgType === "log") {
             addLogMsg(`${new Date(msg.ts*1000).toLocaleTimeString()} - ${msg.msg}`)
         } else if (msg.msgType === "update" && document.visibilityState !== "hidden") {
-            updateTable(msg)
-            drawSeries(msg)
+            applyUpdate(msg)
         }
         event = null
     }
