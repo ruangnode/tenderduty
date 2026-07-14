@@ -19,9 +19,15 @@ type addChainSession struct {
 	lcdURL  string
 }
 
+type deleteChainSession struct {
+	chainName string
+}
+
 var (
-	addChainSessions   = map[int64]*addChainSession{}
-	addChainSessionMux sync.Mutex
+	addChainSessions      = map[int64]*addChainSession{}
+	addChainSessionMux    sync.Mutex
+	deleteChainSessions   = map[int64]*deleteChainSession{}
+	deleteChainSessionMux sync.Mutex
 )
 
 func (c *Config) startTgCommandListener() {
@@ -51,13 +57,21 @@ func (c *Config) startTgCommandListener() {
 		}
 		chatID := update.Message.Chat.ID
 
-		// handle ongoing addchain session (non-command replies)
+		// handle ongoing sessions (non-command replies)
 		addChainSessionMux.Lock()
-		session, inSession := addChainSessions[chatID]
+		session, inAddSession := addChainSessions[chatID]
 		addChainSessionMux.Unlock()
 
-		if inSession && !update.Message.IsCommand() {
+		deleteChainSessionMux.Lock()
+		delSession, inDelSession := deleteChainSessions[chatID]
+		deleteChainSessionMux.Unlock()
+
+		if inAddSession && !update.Message.IsCommand() {
 			c.handleAddChainStep(chatID, update.Message.Text, session, send)
+			continue
+		}
+		if inDelSession && !update.Message.IsCommand() {
+			c.handleDeleteChainConfirm(chatID, update.Message.Text, delSession, send)
 			continue
 		}
 
@@ -84,10 +98,24 @@ func (c *Config) startTgCommandListener() {
 			arg := strings.TrimSpace(update.Message.CommandArguments())
 			send(chatID, "🔍 Checking upgrade plan...")
 			send(chatID, c.handleUpgradeCommand(arg))
+		case "deletechain":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			if arg == "" {
+				send(chatID, c.handleDeleteChainList())
+			} else {
+				found, msg := c.startDeleteChain(chatID, arg)
+				send(chatID, msg)
+				if !found {
+					break
+				}
+			}
 		case "cancel":
 			addChainSessionMux.Lock()
 			delete(addChainSessions, chatID)
 			addChainSessionMux.Unlock()
+			deleteChainSessionMux.Lock()
+			delete(deleteChainSessions, chatID)
+			deleteChainSessionMux.Unlock()
 			send(chatID, "❌ Dibatalkan.")
 		}
 	}
@@ -330,6 +358,114 @@ func countDownNodes(cc *ChainConfig) int {
 		}
 	}
 	return n
+}
+
+// ── Delete chain ─────────────────────────────────────────────────────────
+
+func (c *Config) handleDeleteChainList() string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+	if len(c.Chains) == 0 {
+		return "No chains configured."
+	}
+	lines := []string{"🗑 *Delete Chain*\n\nUsage: `/deletechain <nama>`\n\nChains yang ada:"}
+	for name := range c.Chains {
+		lines = append(lines, "  • `"+name+"`")
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (c *Config) startDeleteChain(chatID int64, chainName string) (found bool, msg string) {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	var foundName string
+	for name := range c.Chains {
+		if strings.EqualFold(name, chainName) {
+			foundName = name
+			break
+		}
+	}
+	if foundName == "" {
+		var names []string
+		for name := range c.Chains {
+			names = append(names, "`"+name+"`")
+		}
+		return false, fmt.Sprintf("❌ Chain '%s' tidak ditemukan.\n\nYang ada: %s", chainName, strings.Join(names, ", "))
+	}
+
+	deleteChainSessionMux.Lock()
+	deleteChainSessions[chatID] = &deleteChainSession{chainName: foundName}
+	deleteChainSessionMux.Unlock()
+
+	return true, fmt.Sprintf(
+		"🗑 *Hapus Chain*\n\nKamu yakin ingin menghapus:\n`%s`\n\n⚠️ Chain akan dihapus dari config dan service akan restart.\n\nKetik `ya` untuk konfirmasi atau `tidak` untuk batal.",
+		foundName,
+	)
+}
+
+func (c *Config) handleDeleteChainConfirm(chatID int64, text string, s *deleteChainSession, send func(int64, string)) {
+	deleteChainSessionMux.Lock()
+	delete(deleteChainSessions, chatID)
+	deleteChainSessionMux.Unlock()
+
+	switch strings.ToLower(strings.TrimSpace(text)) {
+	case "ya", "yes", "y":
+		err := c.removeChainFromConfig(s.chainName)
+		if err != nil {
+			send(chatID, "❌ Gagal menghapus: "+err.Error())
+			return
+		}
+		send(chatID, fmt.Sprintf("✅ Chain *%s* berhasil dihapus!\n\nContainer akan restart dalam 3 detik...", s.chainName))
+		time.Sleep(3 * time.Second)
+		os.Exit(0)
+	default:
+		send(chatID, "❌ Dibatalkan.")
+	}
+}
+
+func (c *Config) removeChainFromConfig(chainName string) error {
+	if c.configFile == "" {
+		c.configFile = "config.yml"
+	}
+	data, err := os.ReadFile(c.configFile)
+	if err != nil {
+		return err
+	}
+
+	lines := strings.Split(string(data), "\n")
+
+	// Chain header format:   "Chain Name":
+	header := fmt.Sprintf("  %q:", chainName)
+
+	startIdx := -1
+	for i, line := range lines {
+		if line == header {
+			startIdx = i
+			break
+		}
+	}
+	if startIdx == -1 {
+		return fmt.Errorf("chain %q tidak ditemukan di config file", chainName)
+	}
+
+	// Find end: next line that looks like another chain header (2 spaces + quote)
+	endIdx := len(lines)
+	for i := startIdx + 1; i < len(lines); i++ {
+		if len(lines[i]) >= 3 && lines[i][:2] == "  " && (lines[i][2] == '"' || lines[i][2] == '\'') {
+			endIdx = i
+			break
+		}
+	}
+
+	// Also trim blank lines immediately before startIdx
+	trimStart := startIdx
+	for trimStart > 0 && strings.TrimSpace(lines[trimStart-1]) == "" {
+		trimStart--
+	}
+
+	result := append(lines[:trimStart], lines[endIdx:]...)
+	return os.WriteFile(c.configFile, []byte(strings.Join(result, "\n")), 0600)
 }
 
 func (c *Config) handleStatusCommand(chainName string) string {
