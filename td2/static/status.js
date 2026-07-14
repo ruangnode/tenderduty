@@ -49,7 +49,29 @@ function setFilter(f) {
         document.getElementById('filter-' + f).classList.add('active')
     }
     if (lastStatus) applyUpdate(lastStatus)
+    forceLogUpdate()
 }
+
+function forceLogUpdate() {
+    // force re-render regardless of visibility state
+    const kw = filterKeywords()
+    let lines
+    if (!currentFilter) {
+        lines = [...rawLogs].reverse()
+    } else if (kw.length === 0) {
+        lines = []
+    } else {
+        lines = [...rawLogs].reverse().filter(line =>
+            !line || kw.some(k => line.toLowerCase().includes(k))
+        )
+    }
+    document.getElementById("logs").innerText = lines.join("\n")
+}
+
+// re-render when tab becomes visible again
+document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState !== 'hidden') forceLogUpdate()
+})
 
 function filteredStatus(status) {
     if (!currentFilter) return status
