@@ -280,6 +280,15 @@ func buildDiscordMessage(msg *alertMsg) *DiscordMessage {
 	}
 }
 
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 func notifyTg(msg *alertMsg) (err error) {
 	if !msg.tg {
 		return nil
@@ -369,8 +378,8 @@ func (c *Config) alert(chainName, message, severity string, resolved bool, id *s
 		message:      message,
 		uniqueId:     uniq,
 		key:          c.Chains[chainName].Alerts.Pagerduty.ApiKey,
-		tgChannel:    c.Chains[chainName].Alerts.Telegram.Channel,
-		tgKey:        c.Chains[chainName].Alerts.Telegram.ApiKey,
+		tgChannel:    firstNonEmpty(c.Chains[chainName].Alerts.Telegram.Channel, c.Telegram.Channel),
+		tgKey:        firstNonEmpty(c.Chains[chainName].Alerts.Telegram.ApiKey, c.Telegram.ApiKey),
 		tgMentions:   strings.Join(c.Chains[chainName].Alerts.Telegram.Mentions, " "),
 		discHook:     c.Chains[chainName].Alerts.Discord.Webhook,
 		discMentions: strings.Join(c.Chains[chainName].Alerts.Discord.Mentions, " "),
