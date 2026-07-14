@@ -61,6 +61,7 @@ func Run(configFile, stateFile, chainConfigDirectory string, password *string) e
 	}()
 
 	go td.startTgCommandListener()
+	go td.startGovernanceMonitor()
 
 	if td.EnableDash {
 		go dash.Serve(td.Listen, td.updateChan, td.logChan, td.HideLogs)

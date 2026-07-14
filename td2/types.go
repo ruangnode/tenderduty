@@ -108,6 +108,8 @@ type ChainConfig struct {
 	// ChainId is used to ensure any endpoints contacted claim to be on the correct chain. This is a weak verification,
 	// no light client validation is performed, so caution is advised when using public endpoints.
 	ChainId string `yaml:"chain_id"`
+	// LcdUrl is the REST/LCD endpoint for querying governance proposals.
+	LcdUrl string `yaml:"lcd_url"`
 	// ValAddress is the validator operator address to be monitored. Tenderduty v1 required the consensus address,
 	// this is no longer needed. The operator address is much easier to find in explorers etc.
 	ValAddress string `yaml:"valoper_address"`
