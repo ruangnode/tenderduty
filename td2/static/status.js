@@ -66,6 +66,8 @@ function forceLogUpdate() {
         )
     }
     document.getElementById("logs").innerText = lines.join("\n")
+    const el = document.getElementById('rn-log-count')
+    if (el) el.innerText = lines.filter(l => l).length + ' entries'
 }
 
 // re-render when tab becomes visible again
@@ -100,12 +102,32 @@ function applyUpdate(status) {
     updateLogDisplay()
 }
 
+// ── Stats cards ──────────────────────────────────────────────────────────
+function updateStats(status) {
+    const s = status.Status
+    const total   = s.length
+    const bonded  = s.filter(x => x.bonded && !x.jailed && !x.tombstoned).length
+    const jailed  = s.filter(x => x.jailed || x.tombstoned).length
+    const alerts  = s.reduce((n, x) => n + (x.active_alerts || 0), 0)
+
+    const el = id => document.getElementById(id)
+    if (el('stat-total'))  el('stat-total').innerText  = total
+    if (el('stat-bonded')) el('stat-bonded').innerText = bonded
+    if (el('stat-jailed')) el('stat-jailed').innerText = jailed
+    if (el('stat-alerts')) el('stat-alerts').innerText = alerts
+
+    const countEl = document.getElementById('rn-chain-count')
+    if (countEl) countEl.innerText = total + ' chain' + (total !== 1 ? 's' : '')
+}
+
 // ── Table ────────────────────────────────────────────────────────────────
 const blocks = new Map()
 
 function updateTable(status) {
     const tbody = document.getElementById("statusTable")
     for (let i = tbody.rows.length; i > 0; i--) tbody.deleteRow(i - 1)
+
+    updateStats(status)
 
     for (let i = 0; i < status.Status.length; i++) {
         const s = status.Status[i]
@@ -119,7 +141,7 @@ function updateTable(status) {
                   <span uk-icon="warning" class="rn-alert-icon" uk-tooltip="${_.escape(s.active_alerts)} active issues"></span>
                 </a>
                 <div id="modal-${_.escape(s.name)}" class="uk-flex-top" uk-modal>
-                  <div class="uk-modal-dialog uk-modal-body uk-margin-auto-vertical" style="background:#151b2e;color:#e2e8f0">
+                  <div class="uk-modal-dialog uk-modal-body uk-margin-auto-vertical" style="background:#0d1117;color:#e2e8f0;border:1px solid rgba(255,255,255,0.08)">
                     <button class="uk-modal-close-default" type="button" uk-close></button>
                     <pre style="color:#94a3b8;font-size:12px">${_.escape(s.last_error)}</pre>
                   </div>
@@ -129,16 +151,20 @@ function updateTable(status) {
             }
         }
 
-        // Status badge
-        let bonded
+        // Status badge + row accent
+        let bonded, rowStatus
         if (s.tombstoned) {
             bonded = `<span class="rn-badge rn-badge-red">☠ Tombstoned</span>`
+            rowStatus = 'tombstoned'
         } else if (s.jailed) {
             bonded = `<span class="rn-badge rn-badge-yellow">⚠ Jailed</span>`
+            rowStatus = 'jailed'
         } else if (s.bonded) {
             bonded = `<span class="rn-badge rn-badge-green">✓ Bonded</span>`
+            rowStatus = 'bonded'
         } else {
             bonded = `<span class="rn-badge rn-badge-gray">— Inactive</span>`
+            rowStatus = 'inactive'
         }
 
         // Uptime
@@ -173,11 +199,13 @@ function updateTable(status) {
         if (s.moniker === "not connected") {
             monikerHtml = `<span style="color:#f59e0b">not connected</span>`
             bonded = `<span class="rn-badge rn-badge-gray">unknown</span>`
+            rowStatus = 'inactive'
         } else {
             monikerHtml = `<span class="rn-moniker">${_.escape(s.moniker.substring(0,24))}</span>`
         }
 
         const r = tbody.insertRow(i)
+        r.setAttribute('data-status', rowStatus)
         r.insertCell(0).innerHTML = `<div>${alerts}</div>`
         r.insertCell(1).innerHTML = `<div class="rn-chain-name">${_.escape(s.name)}</div><div class="rn-chain-id">${_.escape(s.chain_id)}</div>`
         r.insertCell(2).innerHTML = `<div class="rn-height ${heightClass}">${_.escape(s.height)}</div>`
@@ -213,6 +241,8 @@ function updateLogDisplay() {
         }
     }
     document.getElementById("logs").innerText = lines.join("\n")
+    const el = document.getElementById('rn-log-count')
+    if (el) el.innerText = lines.filter(l => l).length + ' entries'
 }
 
 // ── WebSocket ─────────────────────────────────────────────────────────────

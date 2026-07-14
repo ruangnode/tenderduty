@@ -27,20 +27,20 @@ function lightMode() {
     if (isDark) {
         textColor = "#b0b0b0"
         signColorAlpha = 0.4
+        document.body.classList.remove('light-mode')
         document.body.className = "uk-background-secondary uk-light"
         document.getElementById('canvasDiv').className = "uk-width-expand uk-overflow-auto uk-background-secondary"
         document.getElementById("tableDiv").className = "uk-padding-small uk-text-small uk-background-secondary uk-overflow-auto"
         document.getElementById("legendContainer").className = "uk-nav-center uk-background-secondary uk-padding-remove"
-        document.getElementById("logs").style = "height: 220px;"
         return
     }
     textColor = "#3f3f3f"
     signColorAlpha = 0.2
-    document.body.className = "uk-background-default uk-text-default"
+    document.body.classList.add('light-mode')
+    document.body.className = "uk-background-default uk-text-default light-mode"
     document.getElementById('canvasDiv').className = "uk-width-expand uk-overflow-auto uk-background-default"
     document.getElementById("tableDiv").className = "uk-padding-small uk-text-small uk-background-default uk-overflow-auto"
     document.getElementById("legendContainer").className = "uk-nav-center uk-background-default uk-padding-remove"
-    document.getElementById("logs").style = "height: 220px;"
 }
 
 function fix_dpi(id) {
