@@ -298,7 +298,7 @@ func notifyTg(msg *alertMsg) (err error) {
 		prefix = "💜 Resolved: "
 	}
 
-	mc := tgbotapi.NewMessageToChannel(msg.tgChannel, fmt.Sprintf("%s: %s - %s", msg.chain, prefix, msg.message))
+	mc := tgbotapi.NewMessageToChannel(msg.tgChannel, fmt.Sprintf("[RuangNode] %s%s\n%s", prefix, msg.chain, msg.message))
 	_, err = bot.Send(mc)
 	if err != nil {
 		l("telegram send:", err)
