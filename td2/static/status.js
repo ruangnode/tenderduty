@@ -177,14 +177,18 @@ function addLogMsg(str) {
 
 function updateLogDisplay() {
     if (document.visibilityState === "hidden") return
-    const kw = filterKeywords()
     let lines
-    if (kw.length === 0) {
+    if (!currentFilter) {
         lines = [...rawLogs].reverse()
     } else {
-        lines = [...rawLogs].reverse().filter(line =>
-            !line || kw.some(k => line.toLowerCase().includes(k))
-        )
+        const kw = filterKeywords()
+        if (kw.length === 0) {
+            lines = []  // filter aktif tapi tidak ada chain yang cocok
+        } else {
+            lines = [...rawLogs].reverse().filter(line =>
+                !line || kw.some(k => line.toLowerCase().includes(k))
+            )
+        }
     }
     document.getElementById("logs").innerText = lines.join("\n")
 }
