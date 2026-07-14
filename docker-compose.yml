@@ -1,0 +1,17 @@
+services:
+  tenderduty:
+    build: .
+    container_name: tenderduty-v2
+    ports:
+      - "8888:8888"
+      - "28686:28686"
+    volumes:
+      - ./config.yml:/var/lib/tenderduty/config.yml
+    environment:
+      - TZ=Asia/Jakarta
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/state"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
