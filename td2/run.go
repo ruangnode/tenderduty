@@ -60,6 +60,8 @@ func Run(configFile, stateFile, chainConfigDirectory string, password *string) e
 		}
 	}()
 
+	go td.startTgCommandListener()
+
 	if td.EnableDash {
 		go dash.Serve(td.Listen, td.updateChan, td.logChan, td.HideLogs)
 		l("starting dashboard on", td.Listen)
