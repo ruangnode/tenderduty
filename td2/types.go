@@ -70,6 +70,8 @@ type Config struct {
 	chainsMux sync.RWMutex // prevents concurrent map access for Chains
 	// Chains has settings for each validator to monitor. The map's name does not need to match the chain-id.
 	Chains map[string]*ChainConfig `yaml:"chains"`
+
+	configFile string // path to the config file on disk
 }
 
 // savedState is dumped to a JSON file at exit time, and is loaded at start. If successful it will prevent
@@ -391,7 +393,7 @@ func loadChainConfig(yamlFile string) (*ChainConfig, error) {
 // loadConfig creates a new Config from a file.
 func loadConfig(yamlFile, stateFile, chainConfigDirectory string, password *string) (*Config, error) {
 
-	c := &Config{}
+	c := &Config{configFile: yamlFile}
 	if strings.HasPrefix(yamlFile, "http://") || strings.HasPrefix(yamlFile, "https://") {
 		if *password == "" {
 			return nil, errors.New("a password is required if loading a remote configuration")

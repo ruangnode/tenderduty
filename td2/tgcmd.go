@@ -2,10 +2,25 @@ package tenderduty
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+)
+
+type addChainSession struct {
+	step    int
+	name    string
+	chainID string
+	valoper string
+	rpcURL  string
+}
+
+var (
+	addChainSessions   = map[int64]*addChainSession{}
+	addChainSessionMux sync.Mutex
 )
 
 func (c *Config) startTgCommandListener() {
@@ -23,24 +38,135 @@ func (c *Config) startTgCommandListener() {
 	u.Timeout = 60
 	updates := bot.GetUpdatesChan(u)
 
+	send := func(chatID int64, text string) {
+		msg := tgbotapi.NewMessage(chatID, text)
+		msg.ParseMode = "Markdown"
+		bot.Send(msg)
+	}
+
 	for update := range updates {
-		if update.Message == nil || !update.Message.IsCommand() {
+		if update.Message == nil {
 			continue
 		}
+		chatID := update.Message.Chat.ID
+
+		// handle ongoing addchain session (non-command replies)
+		addChainSessionMux.Lock()
+		session, inSession := addChainSessions[chatID]
+		addChainSessionMux.Unlock()
+
+		if inSession && !update.Message.IsCommand() {
+			c.handleAddChainStep(chatID, update.Message.Text, session, send)
+			continue
+		}
+
+		if !update.Message.IsCommand() {
+			continue
+		}
+
 		switch update.Message.Command() {
 		case "status":
 			arg := strings.TrimSpace(update.Message.CommandArguments())
-			reply := c.handleStatusCommand(arg)
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
-			msg.ParseMode = "Markdown"
-			bot.Send(msg)
+			send(chatID, c.handleStatusCommand(arg))
 		case "list":
-			reply := c.handleListCommand()
-			msg := tgbotapi.NewMessage(update.Message.Chat.ID, reply)
-			msg.ParseMode = "Markdown"
-			bot.Send(msg)
+			send(chatID, c.handleListCommand())
+		case "addchain":
+			addChainSessionMux.Lock()
+			addChainSessions[chatID] = &addChainSession{step: 0}
+			addChainSessionMux.Unlock()
+			send(chatID, "➕ *Add Chain*\n\nStep 1/4: Masukkan nama chain:\n(contoh: `AtomOne Testnet`)")
+		case "cancel":
+			addChainSessionMux.Lock()
+			delete(addChainSessions, chatID)
+			addChainSessionMux.Unlock()
+			send(chatID, "❌ Dibatalkan.")
 		}
 	}
+}
+
+func (c *Config) handleAddChainStep(chatID int64, text string, s *addChainSession, send func(int64, string)) {
+	switch s.step {
+	case 0:
+		s.name = strings.TrimSpace(text)
+		s.step = 1
+		send(chatID, fmt.Sprintf("✅ Nama: `%s`\n\nStep 2/4: Masukkan chain ID:\n(contoh: `atomone-testnet-1`)", s.name))
+	case 1:
+		s.chainID = strings.TrimSpace(text)
+		s.step = 2
+		send(chatID, fmt.Sprintf("✅ Chain ID: `%s`\n\nStep 3/4: Masukkan valoper address:", s.chainID))
+	case 2:
+		s.valoper = strings.TrimSpace(text)
+		s.step = 3
+		send(chatID, fmt.Sprintf("✅ Valoper: `%s`\n\nStep 4/4: Masukkan RPC URL:\n(contoh: `tcp://10.32.0.2:26657`)", s.valoper))
+	case 3:
+		s.rpcURL = strings.TrimSpace(text)
+		s.step = 4
+		send(chatID, fmt.Sprintf(
+			"📋 *Konfirmasi:*\n\nNama: `%s`\nChain ID: `%s`\nValoper: `%s`\nRPC: `%s`\n\nKirim `ya` untuk simpan atau `tidak` untuk batal.",
+			s.name, s.chainID, s.valoper, s.rpcURL,
+		))
+	case 4:
+		switch strings.ToLower(strings.TrimSpace(text)) {
+		case "ya", "yes", "y":
+			err := c.appendChainToConfig(s)
+			addChainSessionMux.Lock()
+			delete(addChainSessions, chatID)
+			addChainSessionMux.Unlock()
+			if err != nil {
+				send(chatID, "❌ Gagal menyimpan: "+err.Error())
+				return
+			}
+			send(chatID, fmt.Sprintf("✅ Chain *%s* berhasil ditambahkan!\n\nContainer akan restart dalam 3 detik...", s.name))
+			time.Sleep(3 * time.Second)
+			os.Exit(0) // Docker akan restart otomatis
+		default:
+			addChainSessionMux.Lock()
+			delete(addChainSessions, chatID)
+			addChainSessionMux.Unlock()
+			send(chatID, "❌ Dibatalkan.")
+		}
+	}
+}
+
+func (c *Config) appendChainToConfig(s *addChainSession) error {
+	if c.configFile == "" {
+		c.configFile = "config.yml"
+	}
+	f, err := os.OpenFile(c.configFile, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	block := fmt.Sprintf(`
+  %q:
+    chain_id: %q
+    valoper_address: %q
+    public_fallback: no
+
+    alerts:
+      stalled_enabled: yes
+      stalled_minutes: 10
+      consecutive_enabled: yes
+      consecutive_missed: 5
+      consecutive_priority: critical
+      percentage_enabled: yes
+      percentage_missed: 10
+      percentage_priority: warning
+      alert_if_inactive: yes
+      alert_if_no_servers: yes
+      telegram:
+        enabled: yes
+        api_key: ""
+        channel: ""
+
+    nodes:
+      - url: %s
+        alert_if_down: yes
+`, s.name, s.chainID, s.valoper, s.rpcURL)
+
+	_, err = f.WriteString(block)
+	return err
 }
 
 func (c *Config) handleListCommand() string {
