@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -307,7 +308,13 @@ func notifyTg(msg *alertMsg) (err error) {
 		prefix = "💜 Resolved: "
 	}
 
-	mc := tgbotapi.NewMessageToChannel(msg.tgChannel, fmt.Sprintf("[RuangNode] %s%s\n%s", prefix, msg.chain, msg.message))
+	text := fmt.Sprintf("[RuangNode] %s%s\n%s", prefix, msg.chain, msg.message)
+	var mc tgbotapi.MessageConfig
+	if chatID, parseErr := strconv.ParseInt(msg.tgChannel, 10, 64); parseErr == nil {
+		mc = tgbotapi.NewMessage(chatID, text)
+	} else {
+		mc = tgbotapi.NewMessageToChannel(msg.tgChannel, text)
+	}
 	_, err = bot.Send(mc)
 	if err != nil {
 		l("telegram send:", err)
