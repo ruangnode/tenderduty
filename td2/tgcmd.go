@@ -71,6 +71,10 @@ func (c *Config) startTgCommandListener() {
 			send(chatID, c.handleStatusCommand(arg))
 		case "list":
 			send(chatID, c.handleListCommand())
+		case "proposals":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, "🔍 Checking proposals...")
+			send(chatID, c.handleProposalsCommand(arg))
 		case "addchain":
 			addChainSessionMux.Lock()
 			addChainSessions[chatID] = &addChainSession{step: 0}
@@ -183,6 +187,59 @@ func (c *Config) appendChainToConfig(s *addChainSession) error {
 `
 	_, err = f.WriteString(block)
 	return err
+}
+
+func (c *Config) handleProposalsCommand(chainName string) string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	type target struct {
+		name   string
+		lcdUrl string
+	}
+	var targets []target
+
+	if chainName == "" {
+		for name, cc := range c.Chains {
+			if cc.LcdUrl != "" {
+				targets = append(targets, target{name, cc.LcdUrl})
+			}
+		}
+		if len(targets) == 0 {
+			return "No chains have lcd_url configured."
+		}
+	} else {
+		for name, cc := range c.Chains {
+			if strings.EqualFold(name, chainName) {
+				if cc.LcdUrl == "" {
+					return fmt.Sprintf("Chain *%s* has no lcd_url configured.", name)
+				}
+				targets = append(targets, target{name, cc.LcdUrl})
+				break
+			}
+		}
+		if len(targets) == 0 {
+			return fmt.Sprintf("Chain '%s' not found.", chainName)
+		}
+	}
+
+	var lines []string
+	for _, t := range targets {
+		proposals, err := fetchVotingProposals(t.lcdUrl)
+		if err != nil {
+			lines = append(lines, fmt.Sprintf("❌ *%s*: %s", t.name, err.Error()))
+			continue
+		}
+		if len(proposals) == 0 {
+			lines = append(lines, fmt.Sprintf("✅ *%s*: no active proposals", t.name))
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("🗳️ *%s* — %d proposal(s) in voting:", t.name, len(proposals)))
+		for _, p := range proposals {
+			lines = append(lines, fmt.Sprintf("  📋 #%s: %s\n  ⏰ Ends: %s", p.ID, p.Title, p.EndTime))
+		}
+	}
+	return strings.Join(lines, "\n\n")
 }
 
 func (c *Config) handleListCommand() string {
