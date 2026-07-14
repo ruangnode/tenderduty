@@ -80,6 +80,10 @@ func (c *Config) startTgCommandListener() {
 			addChainSessions[chatID] = &addChainSession{step: 0}
 			addChainSessionMux.Unlock()
 			send(chatID, "➕ *Add Chain*\n\nStep 1/5: Masukkan nama chain:\n(contoh: `AtomOne Testnet`)")
+		case "upgrade":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, "🔍 Checking upgrade plan...")
+			send(chatID, c.handleUpgradeCommand(arg))
 		case "cancel":
 			addChainSessionMux.Lock()
 			delete(addChainSessions, chatID)
@@ -187,6 +191,54 @@ func (c *Config) appendChainToConfig(s *addChainSession) error {
 `
 	_, err = f.WriteString(block)
 	return err
+}
+
+func (c *Config) handleUpgradeCommand(chainName string) string {
+	c.chainsMux.RLock()
+	type target struct {
+		name     string
+		lcdUrl   string
+		blockNum int64
+	}
+	var targets []target
+	if chainName == "" {
+		for name, cc := range c.Chains {
+			if cc.LcdUrl != "" {
+				targets = append(targets, target{name, cc.LcdUrl, cc.lastBlockNum})
+			}
+		}
+		if len(targets) == 0 {
+			c.chainsMux.RUnlock()
+			return "No chains have lcd_url configured."
+		}
+	} else {
+		for name, cc := range c.Chains {
+			if strings.EqualFold(name, chainName) {
+				if cc.LcdUrl == "" {
+					c.chainsMux.RUnlock()
+					return fmt.Sprintf("Chain *%s* has no lcd_url configured.", name)
+				}
+				targets = append(targets, target{name, cc.LcdUrl, cc.lastBlockNum})
+				break
+			}
+		}
+		if len(targets) == 0 {
+			c.chainsMux.RUnlock()
+			return fmt.Sprintf("Chain '%s' not found.", chainName)
+		}
+	}
+	c.chainsMux.RUnlock()
+
+	var lines []string
+	for _, t := range targets {
+		plan, err := fetchUpgradePlan(t.lcdUrl)
+		if err != nil {
+			lines = append(lines, fmt.Sprintf("❌ *%s*: %s", t.name, err.Error()))
+			continue
+		}
+		lines = append(lines, upgradeStatusText(t.name, plan, t.blockNum))
+	}
+	return strings.Join(lines, "\n\n")
 }
 
 func (c *Config) handleProposalsCommand(chainName string) string {
