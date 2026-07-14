@@ -3,35 +3,26 @@
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="css/uikit.min.css" />
   <title>RuangNode Monitor</title>
-  <link rel="icon" href="favicon.png">
   <script src="js/uikit.min.js"></script>
   <script src="./js/uikit-icons.min.js"></script>
   <script src="./js/lodash.min.js"></script>
   <script type="application/javascript" src="grid.js"></script>
   <script type="application/javascript" src="status.js"></script>
+  <link rel="icon" href="favicon.png">
   <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; }
 
-    :root {
-      --bg: #090d1a;
-      --bg2: #0f1423;
-      --bg3: #151b2e;
-      --border: rgba(255,255,255,0.07);
-      --text: #e2e8f0;
-      --muted: #64748b;
-      --dim: #94a3b8;
-      --accent: #6366f1;
-      --green: #22c55e;
-      --red: #ef4444;
-      --yellow: #f59e0b;
+    body.uk-background-secondary {
+      background: #090d1a !important;
+      color: #e2e8f0 !important;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
     }
 
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-      min-height: 100vh;
+    body.uk-background-default {
+      background: #f8fafc !important;
+      color: #1e293b !important;
     }
 
     /* ── Header ── */
@@ -39,89 +30,76 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 18px 28px;
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
+      padding: 16px 24px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+    }
+
+    body.uk-background-default .rn-header {
+      background: rgba(0,0,0,0.03);
+      border-bottom: 1px solid rgba(0,0,0,0.08);
     }
 
     .rn-logo {
       font-size: 18px;
       font-weight: 800;
       letter-spacing: -0.5px;
-      background: linear-gradient(135deg, #818cf8, #6366f1, #a78bfa);
+      background: linear-gradient(135deg, #818cf8, #a78bfa);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
       background-clip: text;
     }
 
-    .rn-tagline {
-      font-size: 11px;
-      color: var(--muted);
-      margin-top: 1px;
-      letter-spacing: 0.04em;
-    }
+    .rn-tagline { font-size: 11px; color: #64748b; margin-top: 2px; }
 
-    .rn-header-right {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-    }
+    .rn-header-right { display: flex; align-items: center; gap: 12px; }
 
     .rn-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      box-shadow: 0 0 6px var(--green);
-      animation: pulse 2s infinite;
+      width: 7px; height: 7px; border-radius: 50%;
+      background: #22c55e; box-shadow: 0 0 6px #22c55e;
+      animation: blink 2s infinite;
     }
 
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.4; }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    .rn-live { font-size: 11px; color: #22c55e; font-weight: 700; letter-spacing:.06em; }
+
+    .rn-btn {
+      font-size: 11px; color: #64748b; cursor: pointer;
+      background: none; border: 1px solid rgba(255,255,255,0.1);
+      padding: 4px 10px; border-radius: 6px; transition: .2s;
     }
 
-    .rn-live {
-      font-size: 11px;
-      color: var(--green);
-      font-weight: 600;
-      letter-spacing: 0.06em;
+    .rn-btn:hover { border-color: #6366f1; color: #e2e8f0; }
+
+    body.uk-background-default .rn-btn {
+      border-color: rgba(0,0,0,0.15); color: #475569;
     }
 
-    .rn-mode-btn {
-      font-size: 11px;
-      color: var(--muted);
-      cursor: pointer;
-      background: none;
-      border: 1px solid var(--border);
-      padding: 4px 10px;
-      border-radius: 6px;
-      transition: border-color 0.2s;
-    }
-
-    .rn-mode-btn:hover { border-color: var(--accent); color: var(--text); }
-
-    /* ── Canvas strip ── */
-    .rn-canvas {
-      background: var(--bg2);
-      border-bottom: 1px solid var(--border);
-      overflow-x: auto;
+    /* ── Canvas zone ── */
+    #canvasDiv {
       padding: 14px 0 0;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
 
-    .rn-canvas-inner { padding: 0 28px; width: max-content; }
-    #legendContainer { text-align: center; padding: 8px 0 14px; }
+    body.uk-background-default #canvasDiv {
+      border-bottom-color: rgba(0,0,0,0.08);
+    }
+
+    #canvasDiv > div { padding: 0 24px; }
+    #legendContainer { text-align: center; padding: 8px 0 12px; }
 
     /* ── Main ── */
-    .rn-main { padding: 28px; max-width: 1400px; margin: 0 auto; }
+    .rn-main { padding: 24px; }
 
-    .rn-section-label {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: var(--muted);
-      margin-bottom: 14px;
+    .rn-label {
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: #64748b; margin-bottom: 14px;
     }
+
+    /* ── Table wrapper ── */
+    #tableDiv { padding: 0 !important; background: transparent !important; }
 
     /* ── Table ── */
     .rn-table {
@@ -131,219 +109,141 @@
     }
 
     .rn-table thead th {
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
-      padding: 0 16px 6px;
-      text-align: left;
-      white-space: nowrap;
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em;
+      color: #64748b; padding: 0 16px 6px;
+      text-align: left; white-space: nowrap;
     }
-
-    .rn-table thead th:first-child { width: 36px; }
 
     .rn-table tbody tr {
-      background: var(--bg3);
-      transition: background 0.15s;
+      background: rgba(255,255,255,0.04);
+      transition: background .15s;
     }
 
-    .rn-table tbody tr:hover { background: #1a2035; }
+    body.uk-background-default .rn-table tbody tr {
+      background: rgba(0,0,0,0.03);
+    }
+
+    .rn-table tbody tr:hover { background: rgba(255,255,255,0.08) !important; }
+
+    body.uk-background-default .rn-table tbody tr:hover {
+      background: rgba(0,0,0,0.06) !important;
+    }
 
     .rn-table tbody td {
       padding: 14px 16px;
-      border-top: 1px solid var(--border);
-      border-bottom: 1px solid var(--border);
+      border-top: 1px solid rgba(255,255,255,0.06);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
       vertical-align: middle;
     }
 
+    body.uk-background-default .rn-table tbody td {
+      border-color: rgba(0,0,0,0.07);
+    }
+
     .rn-table tbody td:first-child {
-      border-left: 1px solid var(--border);
-      border-radius: 10px 0 0 10px;
-      width: 36px;
+      border-left: 1px solid rgba(255,255,255,0.06);
+      border-radius: 10px 0 0 10px; width: 36px;
+    }
+
+    body.uk-background-default .rn-table tbody td:first-child {
+      border-left-color: rgba(0,0,0,0.07);
     }
 
     .rn-table tbody td:last-child {
-      border-right: 1px solid var(--border);
+      border-right: 1px solid rgba(255,255,255,0.06);
       border-radius: 0 10px 10px 0;
     }
 
-    /* chain name cell */
-    .rn-chain-name {
-      font-weight: 600;
-      font-size: 14px;
-      color: var(--text);
+    body.uk-background-default .rn-table tbody td:last-child {
+      border-right-color: rgba(0,0,0,0.07);
     }
 
-    .rn-chain-id {
-      font-size: 11px;
-      color: var(--muted);
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      margin-top: 2px;
-    }
+    .rn-chain-name { font-weight: 600; font-size: 14px; }
+    .rn-chain-id { font-size: 11px; color: #64748b; font-family: monospace; margin-top: 2px; }
+    .rn-height { font-family: monospace; font-size: 13px; color: #94a3b8; }
 
-    /* height */
-    .rn-height {
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 13px;
-      color: var(--dim);
-      letter-spacing: 0.02em;
-    }
-
-    /* moniker */
-    .rn-moniker {
-      font-size: 13px;
-      color: var(--dim);
-      max-width: 160px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    /* bonded badges */
     .rn-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 5px;
-      padding: 4px 11px;
-      border-radius: 20px;
-      font-size: 12px;
-      font-weight: 600;
-      white-space: nowrap;
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 11px; border-radius: 20px;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
     }
 
-    .rn-badge-green {
-      background: rgba(34,197,94,.12);
-      color: var(--green);
-      border: 1px solid rgba(34,197,94,.2);
-    }
+    .rn-badge-green { background: rgba(34,197,94,.12); color: #22c55e; border: 1px solid rgba(34,197,94,.2); }
+    .rn-badge-red   { background: rgba(239,68,68,.12);  color: #ef4444; border: 1px solid rgba(239,68,68,.2); }
+    .rn-badge-yellow{ background: rgba(245,158,11,.12); color: #f59e0b; border: 1px solid rgba(245,158,11,.2); }
+    .rn-badge-gray  { background: rgba(100,116,139,.12);color: #94a3b8; border: 1px solid rgba(100,116,139,.2); }
 
-    .rn-badge-red {
-      background: rgba(239,68,68,.12);
-      color: var(--red);
-      border: 1px solid rgba(239,68,68,.2);
-    }
-
-    .rn-badge-yellow {
-      background: rgba(245,158,11,.12);
-      color: var(--yellow);
-      border: 1px solid rgba(245,158,11,.2);
-    }
-
-    .rn-badge-gray {
-      background: rgba(100,116,139,.12);
-      color: var(--muted);
-      border: 1px solid rgba(100,116,139,.2);
-    }
-
-    /* uptime */
-    .rn-uptime-pct {
-      font-size: 14px;
-      font-weight: 700;
-      color: var(--text);
-    }
-
+    .rn-uptime-pct { font-size: 14px; font-weight: 700; }
     .rn-uptime-bar {
-      width: 100px;
-      height: 3px;
+      width: 100px; height: 3px;
       background: rgba(255,255,255,0.08);
-      border-radius: 2px;
-      margin: 5px 0 3px;
-      overflow: hidden;
+      border-radius: 2px; margin: 5px 0 3px; overflow: hidden;
     }
 
-    .rn-uptime-fill {
-      height: 100%;
-      border-radius: 2px;
-      background: var(--green);
-      transition: width 0.5s ease;
-    }
+    body.uk-background-default .rn-uptime-bar { background: rgba(0,0,0,0.1); }
 
-    .rn-uptime-fill.warn  { background: var(--yellow); }
-    .rn-uptime-fill.danger { background: var(--red); }
+    .rn-uptime-fill { height: 100%; border-radius: 2px; background: #22c55e; transition: width .5s; }
+    .rn-uptime-fill.warn   { background: #f59e0b; }
+    .rn-uptime-fill.danger { background: #ef4444; }
+    .rn-uptime-detail { font-size: 10px; color: #64748b; font-family: monospace; }
 
-    .rn-uptime-detail {
-      font-size: 10px;
-      color: var(--muted);
-      font-family: monospace;
-    }
-
-    /* nodes */
-    .rn-nodes {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .rn-nodes-ok   { color: var(--green); }
-    .rn-nodes-warn { color: var(--yellow); }
-
-    /* alert icon */
-    .rn-alert-icon { color: var(--yellow); cursor: pointer; }
+    .rn-nodes { font-size: 13px; font-weight: 600; }
+    .rn-nodes-ok   { color: #22c55e; }
+    .rn-nodes-warn { color: #f59e0b; }
 
     /* ── Log panel ── */
-    .rn-log {
+    #logContainer {
       margin-top: 24px;
-      background: rgba(0,0,0,0.35);
-      border: 1px solid var(--border);
-      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.07) !important;
+      border-radius: 12px !important;
       overflow: hidden;
+      background: rgba(0,0,0,0.3) !important;
+    }
+
+    body.uk-background-default #logContainer {
+      border-color: rgba(0,0,0,0.1) !important;
+      background: rgba(0,0,0,0.04) !important;
     }
 
     .rn-log-header {
-      display: flex;
-      align-items: center;
-      gap: 8px;
+      display: flex; align-items: center; gap: 8px;
       padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--muted);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      font-size: 10px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .08em; color: #64748b;
     }
 
-    .rn-log-dot {
-      width: 6px; height: 6px;
-      border-radius: 50%;
-      background: var(--accent);
+    body.uk-background-default .rn-log-header {
+      border-bottom-color: rgba(0,0,0,0.08);
     }
+
+    .rn-log-dot { width: 6px; height: 6px; border-radius: 50%; background: #6366f1; }
 
     #logs {
-      display: block;
-      padding: 14px 18px;
-      font-family: 'Cascadia Code', 'Fira Code', monospace;
-      font-size: 12px;
-      color: var(--dim);
-      line-height: 1.7;
-      height: 240px;
-      overflow-y: auto;
-      background: transparent;
-      resize: vertical;
-      border: none;
-      width: 100%;
-      outline: none;
+      display: block !important;
+      padding: 12px 16px !important;
+      font-family: 'Cascadia Code', 'Fira Code', monospace !important;
+      font-size: 12px !important; line-height: 1.7 !important;
+      height: 220px !important; overflow-y: auto !important;
+      background: transparent !important;
+      resize: vertical; border: none; width: 100%; outline: none;
     }
 
     /* ── Footer ── */
-    .rn-footer {
-      text-align: center;
-      padding: 20px;
-      font-size: 11px;
-      color: #334155;
-    }
+    .rn-footer { text-align: center; padding: 20px; font-size: 11px; color: #475569; }
+    .rn-footer a { color: #64748b; text-decoration: none; }
+    .rn-footer a:hover { color: #94a3b8; }
 
-    .rn-footer a { color: var(--muted); text-decoration: none; transition: color 0.2s; }
-    .rn-footer a:hover { color: var(--text); }
-
-    /* scrollbar */
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
   </style>
 </head>
-<body onload="loadState(); legend()">
 
-<header class="rn-header">
+<body class="uk-background-secondary uk-light" onload="loadState(); legend()">
+
+<div class="rn-header">
   <div>
     <div class="rn-logo">RuangNode Monitor</div>
     <div class="rn-tagline">Validator Node Monitoring</div>
@@ -351,23 +251,23 @@
   <div class="rn-header-right">
     <div class="rn-dot"></div>
     <span class="rn-live">LIVE</span>
-    <button class="rn-mode-btn" onclick="lightMode()">☀ Light</button>
+    <button class="rn-btn" onclick="lightMode()">☀ Light</button>
   </div>
-</header>
+</div>
 
-<div class="rn-canvas">
-  <div class="rn-canvas-inner" style="width: 4835px;">
+<div id="canvasDiv" class="uk-width-expand uk-overflow-auto uk-background-secondary">
+  <div style="width: 4835px;" class="uk-padding-remove-horizontal">
     <canvas id="canvas" height="20" width="4735"></canvas>
   </div>
-  <div id="legendContainer">
+  <div id="legendContainer" class="uk-nav-center uk-background-secondary uk-padding-remove">
     <canvas id="legend" height="32" width="700"></canvas>
   </div>
 </div>
 
 <div class="rn-main">
-  <div class="rn-section-label">Validator Status</div>
+  <div class="rn-label">Validator Status</div>
 
-  <div style="overflow-x: auto;">
+  <div id="tableDiv" class="uk-padding-small uk-text-small uk-background-secondary uk-overflow-auto">
     <table class="rn-table">
       <thead>
         <tr>
@@ -384,7 +284,7 @@
     </table>
   </div>
 
-  <div class="rn-log" id="logContainer">
+  <div id="logContainer">
     <div class="rn-log-header">
       <div class="rn-log-dot"></div>
       System Logs
