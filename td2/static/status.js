@@ -40,12 +40,12 @@ function isTestnet(name) {
 }
 
 function setFilter(f) {
-    if (currentFilter === f) {
+    document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
+    if (f === 'all' || currentFilter === f) {
         currentFilter = null
-        document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
+        document.getElementById('filter-all').classList.add('active')
     } else {
         currentFilter = f
-        document.querySelectorAll('.rn-filter').forEach(b => b.classList.remove('active'))
         document.getElementById('filter-' + f).classList.add('active')
     }
     if (lastStatus) applyUpdate(lastStatus)
