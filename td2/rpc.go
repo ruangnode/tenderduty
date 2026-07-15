@@ -2,12 +2,14 @@ package tenderduty
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"regexp"
+	"strings"
 	"time"
 
 	dash "github.com/blockpane/tenderduty/v2/td2/dashboard"
@@ -17,15 +19,13 @@ import (
 // newRpc sets up the rpc client used for monitoring. It will try nodes in order until a working node is found.
 // it will also get some initial info on the validator's status.
 func (cc *ChainConfig) newRpc() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
 	var anyWorking bool // if healthchecks are running, we will skip to the first known good node.
 	for _, endpoint := range cc.Nodes {
 		anyWorking = anyWorking || !endpoint.down
 	}
 	// grab the first working endpoint
 	tryUrl := func(u string) (msg string, down, syncing bool) {
-		_, err := url.Parse(u)
+		_, err := url.Parse(u) //nolint:staticcheck
 		if err != nil {
 			msg = fmt.Sprintf("❌ could not parse url %s: (%s) %s", cc.name, u, err)
 			l(msg)
@@ -39,20 +39,20 @@ func (cc *ChainConfig) newRpc() error {
 			down = true
 			return
 		}
-		status, err := cc.client.Status(ctx)
-		if err != nil {
-			msg = fmt.Sprintf("❌ could not get status for %s: (%s) %s", cc.name, u, err)
+		network, catchingUp, statusErr := rawRPCStatus(u)
+		if statusErr != nil {
+			msg = fmt.Sprintf("❌ could not get status for %s: (%s) %s", cc.name, u, statusErr)
 			down = true
 			l(msg)
 			return
 		}
-		if status.NodeInfo.Network != cc.ChainId {
-			msg = fmt.Sprintf("chain id %s on %s does not match, expected %s, skipping", status.NodeInfo.Network, u, cc.ChainId)
+		if network != cc.ChainId {
+			msg = fmt.Sprintf("chain id %s on %s does not match, expected %s, skipping", network, u, cc.ChainId)
 			down = true
 			l(msg)
 			return
 		}
-		if status.SyncInfo.CatchingUp {
+		if catchingUp {
 			msg = fmt.Sprint("🐢 node is not synced, skipping ", u)
 			syncing = true
 			down = true
@@ -115,6 +115,42 @@ func (cc *ChainConfig) newRpc() error {
 		}
 	}
 	return errors.New("no usable endpoints available for " + cc.ChainId)
+}
+
+// rawRPCStatus fetches /status via plain HTTP and parses only the fields we need,
+// avoiding amino codec failures on non-standard pubkey types (e.g. cometbft/PubKeyBn254 used by Union).
+func rawRPCStatus(nodeUrl string) (network string, catchingUp bool, err error) {
+	u := strings.TrimRight(nodeUrl, "/")
+	u = strings.TrimPrefix(u, "tcp://")
+	if !strings.HasPrefix(u, "http") {
+		u = "http://" + u
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	//#nosec G107
+	resp, err := client.Get(u + "/status")
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return
+	}
+
+	var result struct {
+		Result struct {
+			NodeInfo struct {
+				Network string `json:"network"`
+			} `json:"node_info"`
+			SyncInfo struct {
+				CatchingUp bool `json:"catching_up"`
+			} `json:"sync_info"`
+		} `json:"result"`
+	}
+	if err = json.Unmarshal(body, &result); err != nil {
+		return
+	}
+	return result.Result.NodeInfo.Network, result.Result.SyncInfo.CatchingUp, nil
 }
 
 func (cc *ChainConfig) monitorHealth(ctx context.Context, chainName string) {
