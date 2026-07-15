@@ -3,6 +3,7 @@ package tenderduty
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -468,47 +469,147 @@ func (c *Config) removeChainFromConfig(chainName string) error {
 	return os.WriteFile(c.configFile, []byte(strings.Join(result, "\n")), 0600)
 }
 
-func (c *Config) handleStatusCommand(chainName string) string {
+func isTestnetChain(name string) bool {
+	return strings.Contains(strings.ToLower(name), "testnet")
+}
+
+// chainOneLiner returns a compact single-line status for grouped views.
+func (c *Config) chainOneLiner(name string, cc *ChainConfig) string {
+	emoji, statusStr := "⏳", "connecting"
+	uptime := "—"
+	healthy := 0
+	for _, n := range cc.Nodes {
+		if !n.down {
+			healthy++
+		}
+	}
+	nodes := fmt.Sprintf("%d/%d", healthy, len(cc.Nodes))
+
+	if cc.valInfo != nil {
+		switch {
+		case cc.valInfo.Tombstoned:
+			emoji, statusStr = "☠️", "Tombstoned"
+		case cc.valInfo.Jailed:
+			emoji, statusStr = "🔴", "Jailed"
+		case cc.valInfo.Bonded:
+			emoji, statusStr = "🟢", "Bonded"
+		default:
+			emoji, statusStr = "⚪", "Inactive"
+		}
+		if cc.valInfo.Window > 0 {
+			if cc.valInfo.Missed == 0 {
+				uptime = "100%"
+			} else {
+				uptime = fmt.Sprintf("%.2f%%", 100-float64(cc.valInfo.Missed)/float64(cc.valInfo.Window)*100)
+			}
+		}
+	}
+	return fmt.Sprintf("%s *%s* — %s | ⏱ %s | 🖥 %s", emoji, name, statusStr, uptime, nodes)
+}
+
+// chainDetailBlock returns a multi-line detailed status for daily reports.
+func (c *Config) chainDetailBlock(name string, cc *ChainConfig) string {
+	if cc.valInfo == nil {
+		return fmt.Sprintf("⏳ *%s*\n  └ Connecting...\n", name)
+	}
+	emoji, statusStr := "🟢", "Bonded ✓"
+	switch {
+	case cc.valInfo.Tombstoned:
+		emoji, statusStr = "☠️", "TOMBSTONED"
+	case cc.valInfo.Jailed:
+		emoji, statusStr = "🔴", "JAILED"
+	case !cc.valInfo.Bonded:
+		emoji, statusStr = "⚪", "Inactive"
+	}
+
+	uptime := "—"
+	if cc.valInfo.Window > 0 {
+		if cc.valInfo.Missed == 0 {
+			uptime = "100%"
+		} else {
+			uptime = fmt.Sprintf("%.2f%%", 100-float64(cc.valInfo.Missed)/float64(cc.valInfo.Window)*100)
+		}
+	}
+
+	healthy := 0
+	for _, n := range cc.Nodes {
+		if !n.down {
+			healthy++
+		}
+	}
+	nodeIcon := "✓"
+	if healthy < len(cc.Nodes) {
+		nodeIcon = "⚠️"
+	}
+
+	blockInfo := "—"
+	if !cc.lastBlockTime.IsZero() {
+		ago := time.Since(cc.lastBlockTime).Round(time.Second)
+		blockInfo = fmt.Sprintf("#%d (%s ago)", cc.lastBlockNum, ago)
+	}
+
+	return fmt.Sprintf(
+		"%s *%s* (`%s`)\n"+
+			"  └ Validator: `%s`\n"+
+			"  └ Status: %s\n"+
+			"  └ Uptime: %s (%d/%d missed)\n"+
+			"  └ Block: %s\n"+
+			"  └ Nodes: %d/%d %s\n",
+		emoji, name, cc.ChainId,
+		cc.valInfo.Moniker,
+		statusStr,
+		uptime, cc.valInfo.Missed, cc.valInfo.Window,
+		blockInfo,
+		healthy, len(cc.Nodes), nodeIcon,
+	)
+}
+
+func (c *Config) handleStatusCommand(arg string) string {
+	lower := strings.ToLower(strings.TrimSpace(arg))
+
+	// keywords: all, mainnet, testnet
+	switch lower {
+	case "", "all":
+		return c.buildStatusGroup(func(string) bool { return true }, "📊 *All Chains Status*")
+	case "mainnet":
+		return c.buildStatusGroup(func(name string) bool { return !isTestnetChain(name) }, "🌐 *Mainnet Status*")
+	case "testnet":
+		return c.buildStatusGroup(isTestnetChain, "🧪 *Testnet Status*")
+	}
+
+	// specific chain lookup
 	c.chainsMux.RLock()
 	defer c.chainsMux.RUnlock()
-
-	if chainName == "" {
-		var names []string
-		for name := range c.Chains {
-			names = append(names, name)
-		}
-		return "Usage: /status <chain>\nAvailable: " + strings.Join(names, ", ")
-	}
 
 	var cc *ChainConfig
 	var foundName string
 	for name, chain := range c.Chains {
-		if strings.EqualFold(name, chainName) {
+		if strings.EqualFold(name, arg) {
 			cc = chain
 			foundName = name
 			break
 		}
 	}
-
 	if cc == nil {
 		var names []string
 		for name := range c.Chains {
-			names = append(names, name)
+			names = append(names, "`"+name+"`")
 		}
-		return fmt.Sprintf("Chain '%s' not found.\nAvailable: %s", chainName, strings.Join(names, ", "))
+		sort.Strings(names)
+		return fmt.Sprintf("❌ Chain '%s' tidak ditemukan.\n\nYang tersedia:\n%s\n\nAtau gunakan:\n`/status all` • `/status mainnet` • `/status testnet`", arg, strings.Join(names, "\n"))
+	}
+	if cc.valInfo == nil {
+		return fmt.Sprintf("⏳ *%s*: belum terhubung", foundName)
 	}
 
-	if cc.valInfo == nil || cc.valInfo.Moniker == "not connected" {
-		return fmt.Sprintf("⏳ *%s*: not connected yet", foundName)
-	}
-
-	status := "🟢 Bonded"
-	if cc.valInfo.Tombstoned {
-		status = "☠️ Tombstoned"
-	} else if cc.valInfo.Jailed {
-		status = "🔴 Jailed"
-	} else if !cc.valInfo.Bonded {
-		status = "⚪ Not Active"
+	emoji, statusStr := "🟢", "Bonded"
+	switch {
+	case cc.valInfo.Tombstoned:
+		emoji, statusStr = "☠️", "Tombstoned"
+	case cc.valInfo.Jailed:
+		emoji, statusStr = "🔴", "Jailed"
+	case !cc.valInfo.Bonded:
+		emoji, statusStr = "⚪", "Inactive"
 	}
 
 	uptime := "error"
@@ -519,34 +620,213 @@ func (c *Config) handleStatusCommand(chainName string) string {
 			uptime = fmt.Sprintf("%.2f%%", 100-float64(cc.valInfo.Missed)/float64(cc.valInfo.Window)*100)
 		}
 	}
-
-	healthyNodes := 0
-	for _, node := range cc.Nodes {
-		if !node.down {
-			healthyNodes++
-		}
-	}
-
-	lastBlock := "unknown"
+	healthy := len(cc.Nodes) - countDownNodes(cc)
+	blockInfo := "unknown"
 	if !cc.lastBlockTime.IsZero() {
 		ago := time.Since(cc.lastBlockTime).Round(time.Second)
-		lastBlock = fmt.Sprintf("%d (%s ago)", cc.lastBlockNum, ago)
+		blockInfo = fmt.Sprintf("%d (%s ago)", cc.lastBlockNum, ago)
 	}
 
 	return fmt.Sprintf(
-		"📊 *%s* (`%s`)\n\n"+
-			"Moniker: `%s`\n"+
+		"%s *%s* (`%s`)\n\n"+
+			"Validator: `%s`\n"+
 			"Status: %s\n"+
 			"Uptime: %s (%d/%d missed)\n"+
 			"Consecutive missed: %d\n"+
 			"Last block: %s\n"+
 			"Nodes: %d/%d healthy",
-		foundName, cc.ChainId,
+		emoji, foundName, cc.ChainId,
 		cc.valInfo.Moniker,
-		status,
+		statusStr,
 		uptime, cc.valInfo.Missed, cc.valInfo.Window,
 		int(cc.statConsecutiveMiss),
-		lastBlock,
-		healthyNodes, len(cc.Nodes),
+		blockInfo,
+		healthy, len(cc.Nodes),
 	)
+}
+
+func (c *Config) buildStatusGroup(filterFn func(string) bool, title string) string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	type entry struct{ name string; cc *ChainConfig }
+	var mainnets, testnets []entry
+	for name, cc := range c.Chains {
+		if !filterFn(name) {
+			continue
+		}
+		e := entry{name, cc}
+		if isTestnetChain(name) {
+			testnets = append(testnets, e)
+		} else {
+			mainnets = append(mainnets, e)
+		}
+	}
+	sort.Slice(mainnets, func(i, j int) bool { return mainnets[i].name < mainnets[j].name })
+	sort.Slice(testnets, func(i, j int) bool { return testnets[i].name < testnets[j].name })
+
+	wib := time.FixedZone("WIB", 7*3600)
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s\n_%s_\n", title, time.Now().In(wib).Format("02 Jan 2006 • 15:04 WIB")))
+
+	if len(mainnets) > 0 {
+		bonded := 0
+		for _, e := range mainnets {
+			if e.cc.valInfo != nil && e.cc.valInfo.Bonded && !e.cc.valInfo.Jailed && !e.cc.valInfo.Tombstoned {
+				bonded++
+			}
+		}
+		sb.WriteString(fmt.Sprintf("\n🌐 *Mainnet* — %d/%d Bonded\n", bonded, len(mainnets)))
+		for _, e := range mainnets {
+			sb.WriteString(c.chainOneLiner(e.name, e.cc) + "\n")
+		}
+	}
+	if len(testnets) > 0 {
+		bonded := 0
+		for _, e := range testnets {
+			if e.cc.valInfo != nil && e.cc.valInfo.Bonded && !e.cc.valInfo.Jailed && !e.cc.valInfo.Tombstoned {
+				bonded++
+			}
+		}
+		sb.WriteString(fmt.Sprintf("\n🧪 *Testnet* — %d/%d Bonded\n", bonded, len(testnets)))
+		for _, e := range testnets {
+			sb.WriteString(c.chainOneLiner(e.name, e.cc) + "\n")
+		}
+	}
+	if len(mainnets)+len(testnets) == 0 {
+		sb.WriteString("\n_Tidak ada chain yang sesuai._")
+	}
+	return sb.String()
+}
+
+// ── Daily report ──────────────────────────────────────────────────────────────
+
+func (c *Config) startDailyReport() {
+	if !c.Telegram.Enabled || c.Telegram.ApiKey == "" || c.Telegram.Channel == "" {
+		return
+	}
+	wib := time.FixedZone("WIB", 7*3600)
+	nextTime := func() time.Duration {
+		now := time.Now().In(wib)
+		target := time.Date(now.Year(), now.Month(), now.Day(), 7, 0, 0, 0, wib)
+		if !now.Before(target) {
+			target = target.Add(24 * time.Hour)
+		}
+		return time.Until(target)
+	}
+
+	l(fmt.Sprintf("daily report scheduled, next in %s", nextTime().Round(time.Minute)))
+	timer := time.NewTimer(nextTime())
+	for {
+		<-timer.C
+		for _, msg := range c.buildDailyReport() {
+			sendTgMessage(c.Telegram.ApiKey, c.Telegram.Channel, msg)
+			time.Sleep(300 * time.Millisecond)
+		}
+		timer.Reset(nextTime())
+	}
+}
+
+func (c *Config) buildDailyReport() []string {
+	wib := time.FixedZone("WIB", 7*3600)
+	now := time.Now().In(wib)
+
+	days := []string{"Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"}
+	months := []string{"Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"}
+	dateStr := fmt.Sprintf("%s, %d %s %d | %s WIB",
+		days[now.Weekday()], now.Day(), months[now.Month()-1], now.Year(), now.Format("15:04"))
+
+	// ── Section 1: Status ──────────────────────────────────────────────────
+	c.chainsMux.RLock()
+	type entry struct{ name string; cc *ChainConfig }
+	var mainnets, testnets []entry
+	for name, cc := range c.Chains {
+		e := entry{name, cc}
+		if isTestnetChain(name) {
+			testnets = append(testnets, e)
+		} else {
+			mainnets = append(mainnets, e)
+		}
+	}
+	sort.Slice(mainnets, func(i, j int) bool { return mainnets[i].name < mainnets[j].name })
+	sort.Slice(testnets, func(i, j int) bool { return testnets[i].name < testnets[j].name })
+
+	// collect lcd urls for proposals/upgrades (outside lock)
+	type lcdEntry struct{ name, lcdUrl string; blockNum int64 }
+	var lcdTargets []lcdEntry
+	for name, cc := range c.Chains {
+		if cc.LcdUrl != "" {
+			lcdTargets = append(lcdTargets, lcdEntry{name, cc.LcdUrl, cc.lastBlockNum})
+		}
+	}
+	c.chainsMux.RUnlock()
+
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("🌅 *Daily Report — RuangNode Monitor*\n📅 %s\n", dateStr))
+
+	if len(mainnets) > 0 {
+		bonded := 0
+		for _, e := range mainnets {
+			if e.cc.valInfo != nil && e.cc.valInfo.Bonded && !e.cc.valInfo.Jailed && !e.cc.valInfo.Tombstoned {
+				bonded++
+			}
+		}
+		sb.WriteString(fmt.Sprintf("\n`━━━━━━ 🌐 MAINNET (%d/%d) ━━━━━━`\n\n", bonded, len(mainnets)))
+		for _, e := range mainnets {
+			sb.WriteString(c.chainDetailBlock(e.name, e.cc))
+		}
+	}
+	if len(testnets) > 0 {
+		bonded := 0
+		for _, e := range testnets {
+			if e.cc.valInfo != nil && e.cc.valInfo.Bonded && !e.cc.valInfo.Jailed && !e.cc.valInfo.Tombstoned {
+				bonded++
+			}
+		}
+		sb.WriteString(fmt.Sprintf("\n`━━━━━━ 🧪 TESTNET (%d/%d) ━━━━━━`\n\n", bonded, len(testnets)))
+		for _, e := range testnets {
+			sb.WriteString(c.chainDetailBlock(e.name, e.cc))
+		}
+	}
+	msg1 := sb.String()
+
+	// ── Section 2: Proposals ──────────────────────────────────────────────
+	var sb2 strings.Builder
+	sb2.WriteString("`━━━━━━ 🗳️ PROPOSALS ━━━━━━`\n\n")
+	anyProp := false
+	sort.Slice(lcdTargets, func(i, j int) bool { return lcdTargets[i].name < lcdTargets[j].name })
+	for _, t := range lcdTargets {
+		proposals, err := fetchVotingProposals(t.lcdUrl)
+		if err != nil || len(proposals) == 0 {
+			continue
+		}
+		anyProp = true
+		sb2.WriteString(fmt.Sprintf("🗳️ *%s* — %d active:\n", t.name, len(proposals)))
+		for _, p := range proposals {
+			sb2.WriteString(fmt.Sprintf("  📋 #%s: %s\n  ⏰ Ends: %s\n", p.ID, p.Title, p.EndTime))
+		}
+		sb2.WriteString("\n")
+	}
+	if !anyProp {
+		sb2.WriteString("✅ Tidak ada proposal aktif\n")
+	}
+
+	// ── Section 3: Upgrades ───────────────────────────────────────────────
+	sb2.WriteString("\n`━━━━━━ ⬆️ UPGRADES ━━━━━━`\n\n")
+	anyUpgrade := false
+	for _, t := range lcdTargets {
+		plan, err := fetchUpgradePlan(t.lcdUrl)
+		if err != nil || plan == nil {
+			continue
+		}
+		anyUpgrade = true
+		blocksLeft := plan.Height - t.blockNum
+		sb2.WriteString(fmt.Sprintf("⬆️ *%s*: `%s`\n  Block: %d (%d blocks lagi)\n\n",
+			t.name, plan.Name, plan.Height, blocksLeft))
+	}
+	if !anyUpgrade {
+		sb2.WriteString("✅ Tidak ada upgrade pending\n")
+	}
+
+	return []string{msg1, sb2.String()}
 }
