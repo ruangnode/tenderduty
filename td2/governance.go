@@ -117,6 +117,8 @@ func fetchVotingProposals(lcdUrl string) ([]govProposal, error) {
 	for _, path := range []string{
 		"/cosmos/gov/v1/proposals?proposal_status=PROPOSAL_STATUS_VOTING_PERIOD&pagination.limit=50",
 		"/cosmos/gov/v1beta1/proposals?proposal_status=2&pagination.limit=50",
+		"/atomone/gov/v1/proposals?proposal_status=PROPOSAL_STATUS_VOTING_PERIOD&pagination.limit=50",
+		"/atomone/gov/v1beta1/proposals?proposal_status=2&pagination.limit=50",
 	} {
 		proposals, err := queryProposals(base + path)
 		if err == nil {

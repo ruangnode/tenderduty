@@ -31,20 +31,31 @@ func lcdBase(lcdUrl string) string {
 }
 
 func fetchUpgradePlan(lcdUrl string) (*upgradePlan, error) {
-	url := lcdBase(lcdUrl) + "/cosmos/upgrade/v1beta1/current_plan"
+	base := lcdBase(lcdUrl)
 	client := &http.Client{Timeout: 10 * time.Second}
-	//#nosec G107
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, err
+
+	var body []byte
+	for _, path := range []string{
+		"/cosmos/upgrade/v1beta1/current_plan",
+		"/atomone/upgrade/v1beta1/current_plan",
+	} {
+		//#nosec G107
+		resp, err := client.Get(base + path)
+		if err != nil {
+			continue
+		}
+		if resp.StatusCode == 200 {
+			body, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err == nil {
+				break
+			}
+		} else {
+			resp.Body.Close()
+		}
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("HTTP %d", resp.StatusCode)
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
+	if body == nil {
+		return nil, fmt.Errorf("could not fetch upgrade plan from %s", lcdUrl)
 	}
 
 	var result struct {
