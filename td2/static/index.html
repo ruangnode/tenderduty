@@ -1,22 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="css/uikit.min.css"/>
   <title>RuangNode Monitor</title>
+
+  <!-- Apply theme before paint to avoid flash -->
+  <script>
+    (function() {
+      var saved = localStorage.getItem('rn-theme');
+      var pref  = saved || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', pref);
+    })();
+  </script>
+
   <script src="js/uikit.min.js"></script>
   <script src="./js/uikit-icons.min.js"></script>
   <script src="./js/lodash.min.js"></script>
   <script src="grid.js"></script>
   <script src="status.js"></script>
   <link rel="icon" href="favicon.png">
+
   <style>
-    /* ── Variables ───────────────────────────── */
-    :root {
+    /* ── Design tokens ───────────────────────── */
+    :root,
+    [data-theme="dark"] {
       --bg:        #0B0F14;
       --card:      #111720;
-      --card-alt:  #151D2B;
+      --card-alt:  #161E2C;
       --border:    rgba(255,255,255,0.055);
       --border-md: rgba(255,255,255,0.09);
       --text:      #E2E8F0;
@@ -29,22 +41,31 @@
       --orange:    #F97316;
       --violet:    #A855F7;
       --purple:    #6366F1;
-      --tl-nodata: #1B2333;
+      --scrollbar: #253047;
     }
-    body.light {
+    [data-theme="light"] {
       --bg:        #F1F5F9;
       --card:      #FFFFFF;
       --card-alt:  #F8FAFC;
       --border:    rgba(0,0,0,0.07);
-      --border-md: rgba(0,0,0,0.11);
+      --border-md: rgba(0,0,0,0.12);
       --text:      #0F172A;
       --dim:       #475569;
       --muted:     #94A3B8;
-      --tl-nodata: #E2E8F0;
+      --scrollbar: #CBD5E1;
     }
 
     /* ── Reset ───────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; }
+
+    /* Smooth theme transitions */
+    body, .rn-header, .rn-card, .rn-stat,
+    .rn-table thead th, .rn-table tbody td,
+    .rn-filter, .rn-live, .rn-theme-btn,
+    .rn-badge, .rn-uptime-bar, #logs,
+    .tl-bar, .rn-count-badge {
+      transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+    }
 
     body,
     .uk-background-secondary,
@@ -53,169 +74,147 @@
       color: var(--text) !important;
       font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', system-ui, sans-serif;
       margin: 0; padding: 0;
-      font-size: 13px;
-      line-height: 1.5;
+      font-size: 13px; line-height: 1.5;
       -webkit-font-smoothing: antialiased;
     }
 
     /* ── Header ──────────────────────────────── */
     .rn-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      height: 52px;
-      padding: 0 20px;
+      display: flex; align-items: center; justify-content: space-between;
+      height: 52px; padding: 0 20px;
       background: var(--card);
       border-bottom: 1px solid var(--border);
-      position: sticky;
-      top: 0;
-      z-index: 200;
+      position: sticky; top: 0; z-index: 200;
     }
 
     .rn-brand { display: flex; align-items: center; gap: 9px; }
-
     .rn-mark {
       width: 26px; height: 26px; border-radius: 7px;
       background: var(--purple);
       display: flex; align-items: center; justify-content: center;
-      font-size: 12px; font-weight: 900; color: #fff;
-      flex-shrink: 0; letter-spacing: -.5px;
+      font-size: 12px; font-weight: 900; color: #fff; flex-shrink: 0;
     }
-
-    .rn-brand-name { font-size: 13px; font-weight: 700; color: var(--text); line-height: 1.15; }
+    .rn-brand-name { font-size: 13px; font-weight: 700; line-height: 1.15; }
     .rn-brand-sub  { font-size: 10px; color: var(--muted); }
 
     .rn-nav { display: flex; align-items: center; gap: 6px; }
 
-    /* Filter group */
     .rn-filter-group { display: flex; gap: 2px; }
-
     .rn-filter {
-      height: 28px; padding: 0 11px;
-      border-radius: 6px;
+      height: 28px; padding: 0 11px; border-radius: 6px;
       font-size: 11px; font-weight: 600;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      cursor: pointer;
-      transition: color 150ms, background 150ms, border-color 150ms;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); cursor: pointer;
     }
-    .rn-filter:hover       { background: var(--card-alt); color: var(--dim); border-color: var(--border-md); }
-    .rn-filter.active      { background: var(--purple); border-color: var(--purple); color: #fff; }
+    .rn-filter:hover  { background: var(--card-alt); color: var(--dim); border-color: var(--border-md); }
+    .rn-filter.active { background: var(--purple); border-color: var(--purple); color: #fff; }
 
-    /* Live indicator */
     .rn-live {
       display: flex; align-items: center; gap: 5px;
-      height: 28px; padding: 0 10px;
-      border-radius: 6px;
+      height: 28px; padding: 0 10px; border-radius: 6px;
       border: 1px solid rgba(16,185,129,0.18);
       background: rgba(16,185,129,0.05);
     }
     .rn-live-dot {
       width: 5px; height: 5px; border-radius: 50%;
-      background: var(--green); flex-shrink: 0;
+      background: var(--green);
       animation: blink 2.2s ease-in-out infinite;
     }
     @keyframes blink { 0%,100%{opacity:1} 55%{opacity:.2} }
     .rn-live-label { font-size: 10px; font-weight: 700; color: var(--green); letter-spacing: .1em; }
 
-    /* Theme button */
     .rn-theme-btn {
-      height: 28px; padding: 0 11px;
-      border-radius: 6px;
+      height: 28px; padding: 0 11px; border-radius: 6px;
       font-size: 11px; font-weight: 500;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--muted);
-      cursor: pointer;
-      transition: color 150ms, background 150ms;
+      background: transparent; border: 1px solid var(--border);
+      color: var(--muted); cursor: pointer;
     }
     .rn-theme-btn:hover { background: var(--card-alt); color: var(--dim); }
 
-    /* ── Page wrap ───────────────────────────── */
+    /* ── Page ────────────────────────────────── */
     .rn-page { padding: 16px 20px 40px; }
 
     /* ── Stats ───────────────────────────────── */
     .rn-stats {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 8px;
-      margin-bottom: 12px;
+      display: grid; grid-template-columns: repeat(4, 1fr);
+      gap: 8px; margin-bottom: 10px;
     }
-    @media (max-width: 640px) {
-      .rn-stats { grid-template-columns: repeat(2, 1fr); }
-    }
+    @media (max-width: 600px) { .rn-stats { grid-template-columns: repeat(2, 1fr); } }
 
     .rn-stat {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 13px 16px;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 12px; padding: 13px 16px;
     }
     .rn-stat-label {
-      font-size: 10px; font-weight: 600;
-      text-transform: uppercase; letter-spacing: .07em;
-      color: var(--muted); margin-bottom: 5px;
+      font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--muted); margin-bottom: 5px;
     }
-    .rn-stat-value {
-      font-size: 24px; font-weight: 800;
-      color: var(--text); line-height: 1;
-      transition: color 200ms;
-    }
+    .rn-stat-value { font-size: 24px; font-weight: 800; line-height: 1; }
     .rn-stat-value.c-green  { color: var(--green); }
     .rn-stat-value.c-yellow { color: var(--yellow); }
     .rn-stat-value.c-red    { color: var(--red); }
 
-    /* ── Section card ────────────────────────── */
+    /* ── Cards ───────────────────────────────── */
     .rn-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      margin-bottom: 10px;
-      overflow: hidden;
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: 14px; margin-bottom: 10px; overflow: hidden;
     }
-
     .rn-card-hd {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 11px 18px;
-      border-bottom: 1px solid var(--border);
+      padding: 11px 18px; border-bottom: 1px solid var(--border);
       min-height: 40px;
     }
-
     .rn-card-title {
-      font-size: 10px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .09em;
-      color: var(--muted);
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .09em; color: var(--muted);
       display: flex; align-items: center; gap: 7px;
     }
     .rn-card-title::before {
-      content: '';
-      display: inline-block;
+      content: ''; display: inline-block;
       width: 2px; height: 10px;
       background: var(--green); border-radius: 2px;
     }
-
-    .rn-badge-sm {
+    .rn-count-badge {
       font-size: 10px; color: var(--muted);
-      background: var(--card-alt);
-      border: 1px solid var(--border);
+      background: var(--card-alt); border: 1px solid var(--border);
       padding: 2px 8px; border-radius: 10px;
     }
 
     /* ── Timeline ────────────────────────────── */
-    .tl-legend {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-    }
-    .tl-leg {
-      display: flex; align-items: center; gap: 4px;
-      font-size: 10px; color: var(--muted);
-    }
-    .tl-leg-dot {
-      width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0;
-    }
+    .tl-legend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .tl-leg    { display: flex; align-items: center; gap: 4px; font-size: 10px; color: var(--muted); }
+    .tl-leg-dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
 
     .tl-body { padding: 6px 18px 4px; }
 
+    /* Empty / loading states */
+    .tl-empty {
+      display: flex; flex-direction: column; align-items: center;
+      padding: 28px 20px; gap: 6px; text-align: center;
+    }
+    .tl-empty-icon  { font-size: 22px; opacity: .25; letter-spacing: 4px; }
+    .tl-empty-title { font-size: 12px; font-weight: 600; color: var(--dim); }
+    .tl-empty-sub   { font-size: 11px; color: var(--muted); }
+
+    /* Skeleton loader */
+    .tl-skeleton { display: flex; flex-direction: column; gap: 10px; padding: 10px 18px; }
+    .tl-skel-row { display: flex; align-items: center; gap: 10px; }
+    .tl-skel-name {
+      width: 120px; height: 12px; border-radius: 4px;
+      background: var(--card-alt);
+      animation: shimmer 1.5s infinite;
+    }
+    .tl-skel-bars {
+      flex: 1; height: 14px; border-radius: 4px;
+      background: var(--card-alt);
+      animation: shimmer 1.5s infinite;
+    }
+    @keyframes shimmer {
+      0%,100% { opacity: .5; }
+      50%      { opacity: 1; }
+    }
+
+    /* Chain rows */
     .tl-row {
       display: flex; align-items: center; gap: 10px;
       padding: 5px 0;
@@ -230,34 +229,33 @@
     }
 
     .tl-bars {
-      flex: 1;
-      display: flex; gap: 1px;
-      overflow: hidden;
-      height: 16px;
-      align-items: center;
+      flex: 1; display: flex; gap: 1px;
+      overflow: hidden; height: 16px; align-items: center;
     }
+
+    /* Colored bars: --bc set inline by JS */
     .tl-bar {
-      flex-shrink: 0;
-      width: 5px; height: 14px;
-      border-radius: 2px;
-      background: var(--bc, var(--tl-nodata));
-      transition: opacity 150ms;
+      flex-shrink: 0; width: 5px; height: 14px; border-radius: 2px;
+      background: var(--bc);
     }
-    .tl-bar:hover { opacity: .65; }
+    /* No-data bars: subtle visible slot */
+    .tl-bar-nd {
+      flex-shrink: 0; width: 5px; height: 14px; border-radius: 2px;
+      background: transparent;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,0.07);
+    }
+    [data-theme="light"] .tl-bar-nd {
+      box-shadow: inset 0 0 0 1px rgba(0,0,0,0.1);
+    }
 
     /* ── Table ───────────────────────────────── */
     #tableDiv { background: transparent !important; padding: 0 !important; overflow-x: auto; }
 
-    .rn-table {
-      width: 100%;
-      border-collapse: collapse;
-      border-spacing: 0;
-    }
+    .rn-table { width: 100%; border-collapse: collapse; }
 
     .rn-table thead th {
-      font-size: 10px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .08em;
-      color: var(--muted);
+      font-size: 10px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: var(--muted);
       padding: 9px 14px 8px;
       border-bottom: 1px solid var(--border);
       text-align: left; white-space: nowrap;
@@ -266,7 +264,7 @@
 
     .rn-table tbody tr { transition: background 150ms; }
     .rn-table tbody tr:hover { background: rgba(255,255,255,0.022); }
-    body.light .rn-table tbody tr:hover { background: rgba(0,0,0,0.025); }
+    [data-theme="light"] .rn-table tbody tr:hover { background: rgba(0,0,0,0.025); }
 
     .rn-table tbody td {
       padding: 12px 14px;
@@ -275,28 +273,21 @@
     }
     .rn-table tbody tr:last-child td { border-bottom: none; }
 
-    /* Left accent — only bonded gets green */
-    .rn-table tbody td:first-child {
-      padding-left: 16px;
-      border-left: 2px solid transparent;
-      transition: border-color 200ms;
-    }
+    /* Green left accent only for bonded validators */
+    .rn-table tbody td:first-child { padding-left: 16px; border-left: 2px solid transparent; }
     tr[data-status="bonded"] td:first-child { border-left-color: var(--green); }
 
     .rn-chain-name { font-size: 13px; font-weight: 600; }
-    .rn-chain-id   {
+    .rn-chain-id {
       font-size: 10px; color: var(--muted); margin-top: 2px;
       font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
     }
-
     .rn-height {
       font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
       font-size: 12px; color: var(--dim);
     }
-
     .rn-moniker { font-size: 12px; color: var(--dim); }
 
-    /* Status badges */
     .rn-badge {
       display: inline-flex; align-items: center; gap: 4px;
       padding: 3px 9px; border-radius: 20px;
@@ -307,61 +298,46 @@
     .rn-badge-yellow { background: rgba(245,158,11,.08);  color: var(--yellow); border: 1px solid rgba(245,158,11,.16); }
     .rn-badge-gray   { background: rgba(148,163,184,.06); color: var(--dim);    border: 1px solid rgba(148,163,184,.12); }
 
-    /* Uptime cell */
     .rn-uptime-pct    { font-size: 13px; font-weight: 700; margin-bottom: 5px; }
     .rn-uptime-bar    {
       width: 96px; height: 2px;
-      background: rgba(255,255,255,0.07);
-      border-radius: 2px; margin-bottom: 4px; overflow: hidden;
+      background: rgba(255,255,255,0.07); border-radius: 2px;
+      margin-bottom: 4px; overflow: hidden;
     }
-    body.light .rn-uptime-bar { background: rgba(0,0,0,0.09); }
-    .rn-uptime-fill   {
-      height: 100%; border-radius: 2px;
-      background: var(--green);
+    [data-theme="light"] .rn-uptime-bar { background: rgba(0,0,0,0.09); }
+    .rn-uptime-fill {
+      height: 100%; border-radius: 2px; background: var(--green);
       transition: width 500ms ease;
     }
     .rn-uptime-fill.warn   { background: var(--yellow); }
     .rn-uptime-fill.danger { background: var(--red); }
     .rn-uptime-detail { font-size: 10px; color: var(--muted); font-family: monospace; }
 
-    /* Nodes */
     .rn-nodes      { font-size: 12px; font-weight: 600; }
     .rn-nodes-ok   { color: var(--green); }
     .rn-nodes-warn { color: var(--yellow); }
-
     .rn-alert-icon { color: var(--yellow); }
 
     /* ── Logs ────────────────────────────────── */
     #logs {
-      display: block !important;
-      padding: 12px 18px !important;
+      display: block !important; padding: 12px 18px !important;
       font-family: 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace !important;
-      font-size: 11px !important;
-      line-height: 1.85 !important;
-      height: 196px !important;
-      overflow-y: auto !important;
-      background: transparent !important;
-      color: var(--dim) !important;
-      resize: vertical;
-      border: none; width: 100%; outline: none;
-      white-space: pre-wrap;
-      word-break: break-all;
+      font-size: 11px !important; line-height: 1.85 !important;
+      height: 196px !important; overflow-y: auto !important;
+      background: transparent !important; color: var(--dim) !important;
+      resize: vertical; border: none; width: 100%; outline: none;
+      white-space: pre-wrap; word-break: break-all;
     }
 
     /* ── Footer ──────────────────────────────── */
-    .rn-footer {
-      text-align: center;
-      padding: 24px 0 4px;
-      font-size: 11px; color: var(--muted);
-    }
-    .rn-footer a { color: var(--muted); text-decoration: none; transition: color 150ms; }
+    .rn-footer { text-align: center; padding: 24px 0 4px; font-size: 11px; color: var(--muted); }
+    .rn-footer a { color: var(--muted); text-decoration: none; }
     .rn-footer a:hover { color: var(--dim); }
 
     /* ── Scrollbar ───────────────────────────── */
     ::-webkit-scrollbar { width: 4px; height: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #253047; border-radius: 2px; }
-    body.light ::-webkit-scrollbar-thumb { background: #CBD5E1; }
+    ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 2px; }
 
     /* ── UIKit overrides ─────────────────────── */
     .uk-modal-dialog {
@@ -369,7 +345,6 @@
       color: var(--text) !important;
       border: 1px solid var(--border-md) !important;
     }
-    .uk-modal-close-default { color: var(--dim) !important; }
   </style>
 </head>
 
@@ -394,14 +369,14 @@
       <span class="rn-live-dot"></span>
       <span class="rn-live-label">LIVE</span>
     </div>
-    <button class="rn-theme-btn" id="theme-btn" onclick="lightMode()">☀ Light</button>
+    <button class="rn-theme-btn" id="theme-btn" onclick="toggleTheme()">☀ Light</button>
   </nav>
 </header>
 
 <!-- ── Page ────────────────────────────────────── -->
 <div class="rn-page">
 
-  <!-- Stats row -->
+  <!-- Stats -->
   <div class="rn-stats">
     <div class="rn-stat">
       <div class="rn-stat-label">Total Chains</div>
@@ -431,17 +406,25 @@
         <span class="tl-leg"><span class="tl-leg-dot" style="background:#f97316"></span>Pre-commit</span>
         <span class="tl-leg"><span class="tl-leg-dot" style="background:#a855f7"></span>Pre-vote</span>
         <span class="tl-leg"><span class="tl-leg-dot" style="background:#ef4444"></span>Missed</span>
-        <span class="tl-leg"><span class="tl-leg-dot" style="background:var(--tl-nodata);border:1px solid var(--border-md)"></span>No data</span>
+        <span class="tl-leg">
+          <span class="tl-leg-dot" style="background:transparent;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.25)"></span>No data
+        </span>
       </div>
     </div>
-    <div class="tl-body" id="timelineRows"></div>
+    <!-- Skeleton shown while loading -->
+    <div class="tl-skeleton" id="tl-skeleton">
+      <div class="tl-skel-row"><div class="tl-skel-name"></div><div class="tl-skel-bars"></div></div>
+      <div class="tl-skel-row"><div class="tl-skel-name"></div><div class="tl-skel-bars"></div></div>
+      <div class="tl-skel-row"><div class="tl-skel-name"></div><div class="tl-skel-bars"></div></div>
+    </div>
+    <div class="tl-body" id="timelineRows" style="display:none"></div>
   </div>
 
-  <!-- Validator status table -->
+  <!-- Validator status -->
   <div class="rn-card">
     <div class="rn-card-hd">
       <span class="rn-card-title">Validator Status</span>
-      <span class="rn-badge-sm" id="rn-chain-count"></span>
+      <span class="rn-count-badge" id="rn-chain-count"></span>
     </div>
     <div id="tableDiv">
       <table class="rn-table">
@@ -465,7 +448,7 @@
   <div class="rn-card" id="logContainer">
     <div class="rn-card-hd">
       <span class="rn-card-title">System Logs</span>
-      <span class="rn-badge-sm" id="rn-log-count"></span>
+      <span class="rn-count-badge" id="rn-log-count"></span>
     </div>
     <pre id="logs"></pre>
   </div>
