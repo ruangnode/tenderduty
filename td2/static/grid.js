@@ -16,14 +16,11 @@ function buildBlockBars(blocks, slots) {
         return '<span class="rn-hist-wait">Menunggu data dari Tenderduty…</span>'
     }
 
-    const n    = slots || 150
-    const show = blocks.length > n ? blocks.slice(blocks.length - n) : blocks
-    const allNoData = show.every(b => b === -1 || b === null || b === undefined)
-
-    if (allNoData) {
-        // Still render bars so user sees the slots, but warn in console
-        console.log('[RN] buildBlockBars: all blocks are no-data (-1), chain may just have started')
-    }
+    const n = slots || 150
+    // blocks[0] = newest block, blocks[N-1] = oldest (Go prepends)
+    // Take the first n (most recent), reverse so display is oldest→newest left→right
+    const recent = blocks.slice(0, n)
+    const show   = recent.reverse()
 
     let html = ''
     for (const b of show) {
