@@ -36,6 +36,10 @@ func Run(configFile, stateFile, chainConfigDirectory string, password *string) e
 			select {
 			case alert := <-td.alertChan:
 				go func(msg *alertMsg) {
+					if isMuted(msg.chain) {
+						l(msg.chain, "🔕 alert muted, skipping")
+						return
+					}
 					var e error
 					e = notifyPagerduty(msg)
 					if e != nil {

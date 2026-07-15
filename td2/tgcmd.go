@@ -29,7 +29,24 @@ var (
 	addChainSessionMux    sync.Mutex
 	deleteChainSessions   = map[int64]*deleteChainSession{}
 	deleteChainSessionMux sync.Mutex
+
+	mutedChains    = map[string]time.Time{} // chain name → unmute time
+	mutedChainsMux sync.Mutex
 )
+
+func isMuted(chain string) bool {
+	mutedChainsMux.Lock()
+	defer mutedChainsMux.Unlock()
+	t, ok := mutedChains[chain]
+	if !ok {
+		return false
+	}
+	if time.Now().After(t) {
+		delete(mutedChains, chain)
+		return false
+	}
+	return true
+}
 
 func (c *Config) startTgCommandListener() {
 	if !c.Telegram.Enabled || c.Telegram.ApiKey == "" {
@@ -90,15 +107,31 @@ func (c *Config) startTgCommandListener() {
 			arg := strings.TrimSpace(update.Message.CommandArguments())
 			send(chatID, "🔍 Checking proposals...")
 			send(chatID, c.handleProposalsCommand(arg))
+		case "upgrade":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, "🔍 Checking upgrade plan...")
+			send(chatID, c.handleUpgradeCommand(arg))
+		case "nodes":
+			send(chatID, c.handleNodesCommand())
+		case "missed":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, c.handleMissedCommand(arg))
+		case "report":
+			send(chatID, "📊 Generating report...")
+			for _, msg := range c.buildDailyReport() {
+				send(chatID, msg)
+			}
+		case "mute":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, c.handleMuteCommand(arg))
+		case "unmute":
+			arg := strings.TrimSpace(update.Message.CommandArguments())
+			send(chatID, c.handleUnmuteCommand(arg))
 		case "addchain":
 			addChainSessionMux.Lock()
 			addChainSessions[chatID] = &addChainSession{step: 0}
 			addChainSessionMux.Unlock()
 			send(chatID, "➕ *Add Chain*\n\nStep 1/5: Masukkan nama chain:\n(contoh: `AtomOne Testnet`)")
-		case "upgrade":
-			arg := strings.TrimSpace(update.Message.CommandArguments())
-			send(chatID, "🔍 Checking upgrade plan...")
-			send(chatID, c.handleUpgradeCommand(arg))
 		case "deletechain":
 			arg := strings.TrimSpace(update.Message.CommandArguments())
 			if arg == "" {
@@ -118,6 +151,8 @@ func (c *Config) startTgCommandListener() {
 			delete(deleteChainSessions, chatID)
 			deleteChainSessionMux.Unlock()
 			send(chatID, "❌ Dibatalkan.")
+		case "help":
+			send(chatID, helpText())
 		}
 	}
 }
@@ -467,6 +502,234 @@ func (c *Config) removeChainFromConfig(chainName string) error {
 
 	result := append(lines[:trimStart], lines[endIdx:]...)
 	return os.WriteFile(c.configFile, []byte(strings.Join(result, "\n")), 0600)
+}
+
+func helpText() string {
+	return `🤖 *RuangNode Monitor — Commands*
+
+*Status*
+/status — semua chain (mainnet + testnet)
+/status mainnet — mainnet saja
+/status testnet — testnet saja
+/status <nama> — detail satu chain
+/nodes — semua node & status up/down
+/missed <nama> — info missed blocks
+
+*Governance*
+/proposals — semua active proposals
+/proposals <nama> — proposals satu chain
+/upgrade — cek pending upgrades
+/upgrade <nama> — upgrade satu chain
+
+*Report*
+/report — trigger daily report sekarang
+
+*Mute Alerts*
+/mute <nama> — mute 60 menit (default)
+/mute <nama> <menit> — mute N menit
+/unmute <nama> — unmute sekarang
+
+*Config*
+/addchain — tambah chain baru
+/deletechain — hapus chain
+/list — daftar semua chain
+/cancel — batalkan session aktif`
+}
+
+func (c *Config) handleNodesCommand() string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	type entry struct{ name string; cc *ChainConfig }
+	var chains []entry
+	for name, cc := range c.Chains {
+		chains = append(chains, entry{name, cc})
+	}
+	sort.Slice(chains, func(i, j int) bool { return chains[i].name < chains[j].name })
+
+	var sb strings.Builder
+	sb.WriteString("🖥 *Node Status*\n\n")
+	for _, e := range chains {
+		healthy := 0
+		for _, n := range e.cc.Nodes {
+			if !n.down {
+				healthy++
+			}
+		}
+		icon := "🟢"
+		if healthy == 0 {
+			icon = "🔴"
+		} else if healthy < len(e.cc.Nodes) {
+			icon = "🟡"
+		}
+		sb.WriteString(fmt.Sprintf("%s *%s*\n", icon, e.name))
+		for _, n := range e.cc.Nodes {
+			nodeIcon := "✅"
+			detail := ""
+			if n.down {
+				nodeIcon = "❌"
+				if n.lastMsg != "" {
+					detail = " — " + n.lastMsg
+				}
+				if !n.downSince.IsZero() {
+					detail += fmt.Sprintf(" (down %s)", time.Since(n.downSince).Round(time.Second))
+				}
+			} else if n.syncing {
+				nodeIcon = "🐢"
+				detail = " — syncing"
+			}
+			sb.WriteString(fmt.Sprintf("  %s `%s`%s\n", nodeIcon, n.Url, detail))
+		}
+	}
+	return sb.String()
+}
+
+func (c *Config) handleMissedCommand(chainName string) string {
+	c.chainsMux.RLock()
+	defer c.chainsMux.RUnlock()
+
+	if chainName == "" {
+		// show summary for all chains with any missed
+		var lines []string
+		var chains []string
+		for name := range c.Chains {
+			chains = append(chains, name)
+		}
+		sort.Strings(chains)
+		for _, name := range chains {
+			cc := c.Chains[name]
+			if cc.valInfo == nil {
+				continue
+			}
+			pct := 0.0
+			if cc.valInfo.Window > 0 && cc.valInfo.Missed > 0 {
+				pct = float64(cc.valInfo.Missed) / float64(cc.valInfo.Window) * 100
+			}
+			icon := "🟢"
+			if cc.valInfo.Missed > 0 {
+				icon = "🟡"
+			}
+			if pct >= 10 {
+				icon = "🔴"
+			}
+			lines = append(lines, fmt.Sprintf("%s *%s* — %d/%d missed (%.2f%%)", icon, name, cc.valInfo.Missed, cc.valInfo.Window, pct))
+		}
+		if len(lines) == 0 {
+			return "⏳ Belum ada data."
+		}
+		return "📉 *Missed Blocks*\n\n" + strings.Join(lines, "\n")
+	}
+
+	var cc *ChainConfig
+	var foundName string
+	for name, chain := range c.Chains {
+		if strings.EqualFold(name, chainName) {
+			cc = chain
+			foundName = name
+			break
+		}
+	}
+	if cc == nil {
+		return fmt.Sprintf("❌ Chain '%s' tidak ditemukan.", chainName)
+	}
+	if cc.valInfo == nil {
+		return fmt.Sprintf("⏳ *%s*: belum terhubung.", foundName)
+	}
+
+	pct := 0.0
+	if cc.valInfo.Window > 0 && cc.valInfo.Missed > 0 {
+		pct = float64(cc.valInfo.Missed) / float64(cc.valInfo.Window) * 100
+	}
+	return fmt.Sprintf(
+		"📉 *%s* (`%s`)\n\n"+
+			"Missed: %d / %d (%.4f%%)\n"+
+			"Consecutive missed: %d\n"+
+			"Jailed: %v | Tombstoned: %v",
+		foundName, cc.ChainId,
+		cc.valInfo.Missed, cc.valInfo.Window, pct,
+		int(cc.statConsecutiveMiss),
+		cc.valInfo.Jailed, cc.valInfo.Tombstoned,
+	)
+}
+
+func (c *Config) handleMuteCommand(arg string) string {
+	parts := strings.Fields(arg)
+	if len(parts) == 0 {
+		// list muted chains
+		mutedChainsMux.Lock()
+		defer mutedChainsMux.Unlock()
+		if len(mutedChains) == 0 {
+			return "🔔 Tidak ada chain yang di-mute.\n\nUsage: `/mute <nama> [menit]`"
+		}
+		var lines []string
+		for name, until := range mutedChains {
+			remaining := time.Until(until).Round(time.Minute)
+			if remaining <= 0 {
+				delete(mutedChains, name)
+				continue
+			}
+			lines = append(lines, fmt.Sprintf("🔕 *%s* — %s lagi", name, remaining))
+		}
+		sort.Strings(lines)
+		return "🔕 *Muted chains:*\n\n" + strings.Join(lines, "\n")
+	}
+
+	chainName := parts[0]
+	minutes := 60
+	if len(parts) >= 2 {
+		if _, err := fmt.Sscanf(parts[1], "%d", &minutes); err != nil || minutes <= 0 {
+			return "❌ Format salah. Usage: `/mute <nama> [menit]`"
+		}
+	}
+
+	// find chain (case-insensitive)
+	c.chainsMux.RLock()
+	var foundName string
+	for name := range c.Chains {
+		if strings.EqualFold(name, chainName) {
+			foundName = name
+			break
+		}
+	}
+	c.chainsMux.RUnlock()
+
+	if foundName == "" {
+		return fmt.Sprintf("❌ Chain '%s' tidak ditemukan.", chainName)
+	}
+
+	until := time.Now().Add(time.Duration(minutes) * time.Minute)
+	mutedChainsMux.Lock()
+	mutedChains[foundName] = until
+	mutedChainsMux.Unlock()
+
+	l(fmt.Sprintf("🔕 %s muted for %d minutes", foundName, minutes))
+	return fmt.Sprintf("🔕 *%s* di-mute selama *%d menit*\nAktif sampai: %s WIB\n\nGunakan `/unmute %s` untuk unmute lebih awal.",
+		foundName, minutes,
+		until.In(time.FixedZone("WIB", 7*3600)).Format("15:04:05"),
+		foundName)
+}
+
+func (c *Config) handleUnmuteCommand(chainName string) string {
+	if chainName == "" {
+		return "Usage: `/unmute <nama chain>`"
+	}
+
+	mutedChainsMux.Lock()
+	defer mutedChainsMux.Unlock()
+
+	var foundKey string
+	for name := range mutedChains {
+		if strings.EqualFold(name, chainName) {
+			foundKey = name
+			break
+		}
+	}
+	if foundKey == "" {
+		return fmt.Sprintf("ℹ️ *%s* tidak sedang di-mute.", chainName)
+	}
+	delete(mutedChains, foundKey)
+	l(fmt.Sprintf("🔔 %s unmuted", foundKey))
+	return fmt.Sprintf("🔔 *%s* sudah di-unmute. Alert kembali aktif.", foundKey)
 }
 
 func isTestnetChain(name string) bool {
