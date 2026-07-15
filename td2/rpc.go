@@ -184,22 +184,16 @@ func (cc *ChainConfig) monitorHealth(ctx context.Context, chainName string) {
 						}
 						l("⚠️ " + node.lastMsg)
 					}
-					c, e := rpchttp.New(node.Url, "/websocket")
-					if e != nil {
-						alert(e.Error())
-					}
-					cwt, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					status, e := c.Status(cwt)
-					cancel()
+					network, catchingUp, e := rawRPCStatus(node.Url)
 					if e != nil {
 						alert("down")
 						return
 					}
-					if status.NodeInfo.Network != cc.ChainId {
+					if network != cc.ChainId {
 						alert("on the wrong network")
 						return
 					}
-					if status.SyncInfo.CatchingUp {
+					if catchingUp {
 						alert("not synced")
 						node.syncing = true
 						return
