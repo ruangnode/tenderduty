@@ -2,6 +2,8 @@ package tenderduty
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -190,9 +192,20 @@ func getVal(ctx context.Context, client *rpchttp.HTTP, valoper string) (pub []by
 			return
 		}
 		pubBytes = pk.Address().Bytes()
+	default:
+		// Unknown key type (e.g. Union's cometbft/PubKeyBn254).
+		// Extract the raw key bytes from the protobuf Any value (field 1)
+		// and derive the CometBFT validator address as SHA256(keyBytes)[:20].
+		rawKey, e := protoExtractField1(val.Validator.ConsensusPubkey.Value)
+		if e != nil || len(rawKey) == 0 {
+			return nil, "", false, false, fmt.Errorf("unsupported consensus key type %s for %s", val.Validator.ConsensusPubkey.TypeUrl, valoper)
+		}
+		h := sha256.Sum256(rawKey)
+		pubBytes = h[:20]
+		l(fmt.Sprintf("⚙️ %s using non-standard key type %s, derived address via SHA256", valoper[:min(20, len(valoper))], val.Validator.ConsensusPubkey.TypeUrl))
 	}
 	if len(pubBytes) == 0 {
-		return nil, "", false, false, errors.New("could not get pubkey for" + valoper)
+		return nil, "", false, false, errors.New("could not get pubkey for " + valoper)
 	}
 
 	return pubBytes, val.Validator.GetMoniker(), val.Validator.Jailed, val.Validator.Status == 3, nil
@@ -201,4 +214,30 @@ func getVal(ctx context.Context, client *rpchttp.HTTP, valoper string) (pub []by
 func ToBytes(address string) []byte {
 	bz, _ := hex.DecodeString(strings.ToLower(address))
 	return bz
+}
+
+// protoExtractField1 extracts the bytes value of protobuf field 1 (wire type 2).
+// Used to get raw key bytes from unknown pubkey types that follow the standard
+// single-field pattern: message PubKey { bytes key = 1; }
+func protoExtractField1(data []byte) ([]byte, error) {
+	if len(data) < 2 {
+		return nil, errors.New("too short")
+	}
+	// field 1, wire type 2 (length-delimited) = tag 0x0a
+	if data[0] != 0x0a {
+		return nil, fmt.Errorf("unexpected tag byte 0x%02x, want 0x0a", data[0])
+	}
+	// read varint length
+	keyLen, n := binary.Uvarint(data[1:])
+	if n <= 0 || int(keyLen) == 0 || 1+n+int(keyLen) > len(data) {
+		return nil, errors.New("invalid varint length")
+	}
+	return data[1+n : 1+n+int(keyLen)], nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
